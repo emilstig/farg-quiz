@@ -1271,6 +1271,7 @@
           playbackHeld: false,
           lobbyPlayBody: null,
           lobbyInput: "",
+          loopPlayBody: null,
           trackUris: [],
           playlistTracks: [],
           colorMap: {},
@@ -1985,43 +1986,87 @@
 
         function startDeviceKeepAlive() {
           stopDeviceKeepAlive();
-          if (!isSleepyDevice(state.deviceType, state.deviceName)) return;
+          if (!state.loopPlayBody && !(state.playbackHeld && state.currentTrackUri))
+            return;
           deviceKeepAliveTimer = setInterval(() => {
             keepDeviceAwake().catch((err) =>
               console.warn("Keep-alive failed:", err),
             );
-          }, 15000);
+          }, 2500);
+        }
+
+        function setLoopPlayBody(body) {
+          state.loopPlayBody = body || null;
+          if (state.loopPlayBody) startDeviceKeepAlive();
+          else stopDeviceKeepAlive();
+        }
+
+        function playbackMatchesLoop(playback, body) {
+          if (!playback || !playback.is_playing || !body) return false;
+          if (body.uris && body.uris[0]) {
+            const item = playback.item || playback.currently_playing_item;
+            return !!(item && item.uri === body.uris[0]);
+          }
+          if (body.context_uri) {
+            return !!(playback.context && playback.context.uri === body.context_uri);
+          }
+          return true;
+        }
+
+        function loopBodyAlmostDone(playback, body) {
+          if (!body || !body.uris || !playback) return false;
+          const item = playback.item || playback.currently_playing_item;
+          if (!item || typeof playback.progress_ms !== "number" || !item.duration_ms)
+            return false;
+          return item.duration_ms - playback.progress_ms < 2500;
         }
 
         async function keepDeviceAwake() {
           if (!state.deviceId) return;
           if (state.phase === "playing" || state.phase === "countdown") return;
+
+          const loopBody =
+            state.loopPlayBody ||
+            (state.phase === "judging" && state.currentTrackUri
+              ? { uris: [state.currentTrackUri] }
+              : null);
+          if (!loopBody) return;
+
           let playback = null;
           try {
             playback = await spotifyFetch("/me/player");
           } catch {
             playback = null;
           }
-          if (playback && playback.is_playing) return;
 
-          if (state.phase === "judging" && state.playbackHeld && state.currentTrackUri) {
-            await spotifyFetch(
-              "/me/player/play?device_id=" + encodeURIComponent(state.deviceId),
-              {
-                method: "PUT",
-                body: JSON.stringify({ uris: [state.currentTrackUri] }),
-              },
-            );
+          if (
+            playbackMatchesLoop(playback, loopBody) &&
+            !loopBodyAlmostDone(playback, loopBody)
+          ) {
+            return;
+          }
+
+          if (state.phase === "judging" && state.playbackHeld) {
             try {
+              await spotifyFetch(
+                "/me/player/play?device_id=" + encodeURIComponent(state.deviceId),
+                {
+                  method: "PUT",
+                  body: JSON.stringify(loopBody),
+                },
+              );
               await setVolume(state.duckedVolume || 28, state.deviceId);
             } catch (err) {
-              console.warn("Could not re-duck keep-alive:", err);
+              console.warn("Could not loop ducked track:", err);
             }
             return;
           }
 
-          if (state.phase === "judging") return;
-          await ensureAmbientMusic();
+          try {
+            await playOnDevice(loopBody, state.deviceId);
+          } catch (err) {
+            console.warn("Could not loop playback:", err);
+          }
         }
 
         function duckedVolumeFrom(percent) {
@@ -2043,7 +2088,9 @@
             state.duckedVolume = duckedVolumeFrom(state.savedVolume);
             await setVolume(state.duckedVolume, deviceId);
             state.playbackHeld = true;
-            startDeviceKeepAlive();
+            setLoopPlayBody(
+              state.currentTrackUri ? { uris: [state.currentTrackUri] } : state.loopPlayBody,
+            );
             return;
           } catch (err) {
             console.warn("Volume duck failed, pausing instead:", err);
@@ -2053,7 +2100,6 @@
         }
 
         async function restoreHeldVolume(deviceId) {
-          stopDeviceKeepAlive();
           if (!state.playbackHeld) return;
           try {
             await setVolume(state.savedVolume || 80, deviceId);
@@ -2085,33 +2131,44 @@
 
             if (forceLobby && state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
-              startDeviceKeepAlive();
+              setLoopPlayBody(state.lobbyPlayBody);
               return;
             }
 
             if (state.playbackHeld) {
               await restoreHeldVolume(state.deviceId);
-              startDeviceKeepAlive();
+              setLoopPlayBody(
+                state.currentTrackUri ? { uris: [state.currentTrackUri] } : null,
+              );
               return;
             }
 
             if (playing) {
-              startDeviceKeepAlive();
+              const body =
+                state.phase !== "idle" && state.currentTrackUri
+                  ? { uris: [state.currentTrackUri] }
+                  : state.lobbyPlayBody ||
+                    (playback.item && playback.item.uri
+                      ? { uris: [playback.item.uri] }
+                      : null);
+              setLoopPlayBody(body);
               return;
             }
 
             if (state.currentTrackUri && state.phase !== "idle") {
-              await playOnDevice({ uris: [state.currentTrackUri] }, state.deviceId);
-              startDeviceKeepAlive();
+              const body = { uris: [state.currentTrackUri] };
+              await playOnDevice(body, state.deviceId);
+              setLoopPlayBody(body);
               return;
             }
 
             if (state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
+              setLoopPlayBody(state.lobbyPlayBody);
             } else {
               await transferPlayback(state.deviceId, true);
+              startDeviceKeepAlive();
             }
-            startDeviceKeepAlive();
           } catch (err) {
             console.warn("Ambient music failed:", err);
           }
@@ -2723,6 +2780,7 @@
           setStatus("Nedräkning…");
           hideBanner($("game-error"));
           stopDeviceKeepAlive();
+          state.loopPlayBody = null;
 
           // Countdown 3-2-1 — leave ambient music running until the quiz track starts
           const overlay = $("countdown-overlay");
