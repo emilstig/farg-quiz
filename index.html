@@ -1268,6 +1268,7 @@
           deviceType: null,
           savedVolume: 80,
           duckedVolume: 28,
+          heldProgressMs: 0,
           playbackHeld: false,
           lobbyPlayBody: null,
           lobbyInput: "",
@@ -1813,10 +1814,11 @@
               "Spotify-fel " + res.status;
 
             if (
-              res.status === 404 ||
-              /NO_ACTIVE_DEVICE|no active device|Device not found/i.test(
-                String(msg),
-              )
+              !/\/me\/player\/volume/i.test(path) &&
+              (res.status === 404 ||
+                /NO_ACTIVE_DEVICE|no active device|Device not found/i.test(
+                  String(msg),
+                ))
             ) {
               throw new DeviceError(inactiveDeviceMessage());
             }
@@ -1825,7 +1827,11 @@
                 typeof msg === "string" ? msg : "Forbidden",
               );
             }
-            if (res.status === 403 && path.indexOf("/me/player") === 0) {
+            if (
+              res.status === 403 &&
+              path.indexOf("/me/player") === 0 &&
+              !/\/me\/player\/volume/i.test(path)
+            ) {
               throw new DeviceError(
                 "Spotify nekade uppspelning (403" +
                   (typeof msg === "string" && msg ? ": " + msg : "") +
@@ -2013,12 +2019,27 @@
           return true;
         }
 
-        function loopBodyAlmostDone(playback, body) {
-          if (!body || !body.uris || !playback) return false;
-          const item = playback.item || playback.currently_playing_item;
-          if (!item || typeof playback.progress_ms !== "number" || !item.duration_ms)
-            return false;
-          return item.duration_ms - playback.progress_ms < 2500;
+        function playbackProgressMs(playback) {
+          return playback && typeof playback.progress_ms === "number"
+            ? playback.progress_ms
+            : 0;
+        }
+
+        function shouldRestartLoopFromStart(playback, body) {
+          if (!playback) return true;
+          if (body && body.uris && body.uris[0]) {
+            const item = playback.item || playback.currently_playing_item;
+            if (item && item.uri && item.uri !== body.uris[0]) return true;
+            if (
+              item &&
+              item.duration_ms &&
+              typeof playback.progress_ms === "number" &&
+              playback.progress_ms >= item.duration_ms - 1500
+            ) {
+              return true;
+            }
+          }
+          return false;
         }
 
         async function keepDeviceAwake() {
@@ -2027,7 +2048,8 @@
 
           const loopBody =
             state.loopPlayBody ||
-            (state.phase === "judging" && state.currentTrackUri
+            ((state.phase === "judging" || state.phase === "between") &&
+            state.currentTrackUri
               ? { uris: [state.currentTrackUri] }
               : null);
           if (!loopBody) return;
@@ -2039,31 +2061,35 @@
             playback = null;
           }
 
+          if (playbackMatchesLoop(playback, loopBody)) return;
+
+          const body = Object.assign({}, loopBody);
           if (
-            playbackMatchesLoop(playback, loopBody) &&
-            !loopBodyAlmostDone(playback, loopBody)
+            body.uris &&
+            playback &&
+            !shouldRestartLoopFromStart(playback, loopBody)
           ) {
-            return;
+            const pos = playbackProgressMs(playback) || state.heldProgressMs || 0;
+            if (pos > 400) body.position_ms = pos;
           }
 
-          if (state.phase === "judging" && state.playbackHeld) {
-            try {
+          try {
+            if (state.playbackHeld) {
               await spotifyFetch(
                 "/me/player/play?device_id=" + encodeURIComponent(state.deviceId),
                 {
                   method: "PUT",
-                  body: JSON.stringify(loopBody),
+                  body: JSON.stringify(body),
                 },
               );
-              await setVolume(state.duckedVolume || 28, state.deviceId);
-            } catch (err) {
-              console.warn("Could not loop ducked track:", err);
+              try {
+                await setVolume(state.duckedVolume || 28, state.deviceId);
+              } catch (err) {
+                console.warn("Could not re-duck loop:", err);
+              }
+              return;
             }
-            return;
-          }
-
-          try {
-            await playOnDevice(loopBody, state.deviceId);
+            await playOnDevice(body, state.deviceId);
           } catch (err) {
             console.warn("Could not loop playback:", err);
           }
@@ -2085,18 +2111,24 @@
                 ? playback.device.volume_percent
                 : null;
             if (vol != null && vol > 0) state.savedVolume = vol;
+            state.heldProgressMs = playbackProgressMs(playback);
             state.duckedVolume = duckedVolumeFrom(state.savedVolume);
-            await setVolume(state.duckedVolume, deviceId);
+            try {
+              await setVolume(state.duckedVolume, deviceId);
+            } catch (err) {
+              console.warn("Volume duck failed, keeping current volume:", err);
+            }
             state.playbackHeld = true;
             setLoopPlayBody(
               state.currentTrackUri ? { uris: [state.currentTrackUri] } : state.loopPlayBody,
             );
-            return;
           } catch (err) {
-            console.warn("Volume duck failed, pausing instead:", err);
-            state.playbackHeld = false;
+            console.warn("Could not duck playback, leaving it running:", err);
+            state.playbackHeld = true;
+            setLoopPlayBody(
+              state.currentTrackUri ? { uris: [state.currentTrackUri] } : state.loopPlayBody,
+            );
           }
-          await pausePlayback(deviceId);
         }
 
         async function restoreHeldVolume(deviceId) {
@@ -2130,34 +2162,23 @@
             const playing = !!(playback && playback.is_playing);
 
             if (forceLobby && state.lobbyPlayBody) {
+              await restoreHeldVolume(state.deviceId);
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
               setLoopPlayBody(state.lobbyPlayBody);
               return;
             }
 
-            if (state.playbackHeld) {
-              await restoreHeldVolume(state.deviceId);
-              setLoopPlayBody(
-                state.currentTrackUri ? { uris: [state.currentTrackUri] } : null,
-              );
+            if (state.currentTrackUri && state.phase !== "idle") {
+              setLoopPlayBody({ uris: [state.currentTrackUri] });
               return;
             }
 
             if (playing) {
               const body =
-                state.phase !== "idle" && state.currentTrackUri
-                  ? { uris: [state.currentTrackUri] }
-                  : state.lobbyPlayBody ||
-                    (playback.item && playback.item.uri
-                      ? { uris: [playback.item.uri] }
-                      : null);
-              setLoopPlayBody(body);
-              return;
-            }
-
-            if (state.currentTrackUri && state.phase !== "idle") {
-              const body = { uris: [state.currentTrackUri] };
-              await playOnDevice(body, state.deviceId);
+                state.lobbyPlayBody ||
+                (playback.item && playback.item.uri
+                  ? { uris: [playback.item.uri] }
+                  : null);
               setLoopPlayBody(body);
               return;
             }
@@ -2186,13 +2207,8 @@
             });
           };
 
-          const restoreAfterPlay = async () => {
-            if (state.playbackHeld) await restoreHeldVolume(deviceId);
-          };
-
           try {
             await play();
-            await restoreAfterPlay();
             return;
           } catch (err) {
             if (!(err instanceof DeviceError) || !deviceId) throw err;
@@ -2202,7 +2218,6 @@
             await transferPlayback(deviceId, false);
             await sleep(500);
             await play();
-            await restoreAfterPlay();
             return;
           } catch {
             // Device may still accept a direct play after a short wait
@@ -2211,7 +2226,6 @@
           await sleep(400);
           try {
             await play();
-            await restoreAfterPlay();
           } catch (err) {
             if (err instanceof DeviceError) {
               throw new DeviceError(inactiveDeviceMessage());
@@ -2781,6 +2795,7 @@
           hideBanner($("game-error"));
           stopDeviceKeepAlive();
           state.loopPlayBody = null;
+          await restoreHeldVolume(state.deviceId);
 
           // Countdown 3-2-1 — leave ambient music running until the quiz track starts
           const overlay = $("countdown-overlay");
