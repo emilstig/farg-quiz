@@ -983,8 +983,9 @@
               placeholder="https://open.spotify.com/playlist/… eller spotify:playlist:…"
             />
             <p class="hint">
-              Måste vara en spellista du äger (eller är collaborator på). Andras
-              publika listor ger 403.
+              Samma Spotify-konto som äger listan måste vara inloggat här.
+              Andras listor ger 403 även om de är publika — gör en kopia i
+              Spotify och klistra in den nya länken.
             </p>
           </div>
 
@@ -1253,6 +1254,7 @@
           selectedColorId: null,
           claimingPlayer: null,
           roundBusy: false,
+          me: null,
         };
 
         // ═══════════════════════════════════════════════════════════
@@ -1371,7 +1373,10 @@
           if (!raw) return null;
           let m = raw.match(/spotify:playlist:([a-zA-Z0-9]+)/);
           if (m) return m[1];
-          m = raw.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+          // iOS-delning lägger ofta in /intl-sv/ eller /embed/ före playlist/
+          m = raw.match(
+            /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?playlist\/([a-zA-Z0-9]+)/i,
+          );
           if (m) return m[1];
           if (/^[a-zA-Z0-9]{22}$/.test(raw)) return raw;
           return null;
@@ -1457,6 +1462,7 @@
           state.accessToken = null;
           state.refreshToken = null;
           state.tokenExpiresAt = 0;
+          state.me = null;
           sessionStorage.removeItem(STORAGE.tokens);
           sessionStorage.removeItem(STORAGE.verifier);
         }
@@ -1683,6 +1689,12 @@
         }
         DeviceError.prototype = Object.create(Error.prototype);
 
+        function PlaylistAccessError(message) {
+          this.name = "PlaylistAccessError";
+          this.message = message;
+        }
+        PlaylistAccessError.prototype = Object.create(Error.prototype);
+
         // ═══════════════════════════════════════════════════════════
         // Spotify API
         // ═══════════════════════════════════════════════════════════
@@ -1737,9 +1749,16 @@
                 "Ingen aktiv Spotify Connect-enhet. Öppna Spotify på högtalarenheten och välj den här.",
               );
             }
-            if (res.status === 403) {
-              throw new Error(
-                "Spotify nekade spellistan (403). API:t tillåter bara spellistor du äger eller är collaborator på. Högerklicka spellistan i Spotify → Lägg till i biblioteket / skapa en egen kopia, och klistra in den URL:en här.",
+            if (res.status === 403 && /\/playlists\/[^/]+\/items/i.test(path)) {
+              throw new PlaylistAccessError(
+                typeof msg === "string" ? msg : "Forbidden",
+              );
+            }
+            if (res.status === 403 && path.indexOf("/me/player") === 0) {
+              throw new DeviceError(
+                "Spotify nekade uppspelning (403" +
+                  (typeof msg === "string" && msg ? ": " + msg : "") +
+                  "). Premium krävs, och enheten får inte vara begränsad. Öppna Spotify på högtalaren, spela en låt kort, och välj enheten igen.",
               );
             }
             throw new Error(
@@ -1760,6 +1779,49 @@
           return urlOrPath.replace(/^https:\/\/api\.spotify\.com\/v1/, "");
         }
 
+        async function fetchMe() {
+          const data = await spotifyFetch("/me");
+          state.me = {
+            id: data && data.id,
+            name: (data && (data.display_name || data.id)) || "Spotify-användare",
+          };
+          return state.me;
+        }
+
+        async function describePlaylistAccess(playlistId) {
+          const loggedInAs = state.me && state.me.name;
+          try {
+            const playlist = await spotifyFetch(
+              "/playlists/" + encodeURIComponent(playlistId),
+            );
+            const owner = playlist && playlist.owner;
+            const ownerName =
+              (owner && (owner.display_name || owner.id)) || "okänd";
+            const ownerId = owner && owner.id;
+            const myId = state.me && state.me.id;
+            if (ownerId && myId && ownerId === myId) {
+              return (
+                "Spotify nekade låtarna i listan (403) även fast den ägs av " +
+                ownerName +
+                ". Gör en kopia i Spotify-appen (tre prickar → Lägg till i ett annat bibliotek) och klistra in den nya URL:en."
+              );
+            }
+            return (
+              "Inloggad som " +
+              (loggedInAs || "okänt konto") +
+              ", men listan ägs av " +
+              ownerName +
+              ". Logga in med samma konto som på datorn, eller skapa en egen kopia av listan och använd den URL:en."
+            );
+          } catch {
+            return (
+              "Spotify nekade spellistan (403). API:t tillåter bara listor det inloggade kontot äger eller är collaborator på." +
+              (loggedInAs ? " Du är inloggad som " + loggedInAs + "." : "") +
+              " Logga in med samma konto som på datorn, eller skapa en kopia av listan och klistra in den nya URL:en."
+            );
+          }
+        }
+
         async function fetchPlaylistTracks(playlistId) {
           const tracks = [];
           // Feb 2026+: /tracks borttaget → /items. Bara egna/collaborator-spellistor.
@@ -1768,33 +1830,61 @@
             encodeURIComponent(playlistId) +
             "/items?limit=50&additional_types=track";
 
-          while (path) {
-            const data = await spotifyFetch(path);
-            const items = (data && data.items) || [];
-            for (const entry of items) {
-              const t = entry && (entry.item || entry.track);
-              if (t && t.type === "track" && t.uri) {
-                const artists = Array.isArray(t.artists)
-                  ? t.artists
-                      .map((a) => a && a.name)
-                      .filter(Boolean)
-                      .join(", ")
-                  : "";
-                tracks.push({
-                  uri: t.uri,
-                  name: t.name || "Okänd låt",
-                  artist: artists,
-                });
+          try {
+            while (path) {
+              const data = await spotifyFetch(path);
+              const items = (data && data.items) || [];
+              for (const entry of items) {
+                const t = entry && (entry.item || entry.track);
+                if (t && t.type === "track" && t.uri) {
+                  const artists = Array.isArray(t.artists)
+                    ? t.artists
+                        .map((a) => a && a.name)
+                        .filter(Boolean)
+                        .join(", ")
+                    : "";
+                  tracks.push({
+                    uri: t.uri,
+                    name: t.name || "Okänd låt",
+                    artist: artists,
+                  });
+                }
               }
+              path = toApiPath(data && data.next);
             }
-            path = toApiPath(data && data.next);
+          } catch (err) {
+            if (err instanceof PlaylistAccessError) {
+              throw new Error(await describePlaylistAccess(playlistId));
+            }
+            throw err;
           }
 
           return tracks;
         }
 
-        async function fetchAllPlaylistTracks(playlistId) {
+        function rememberPlaylist(playlistId, tracks) {
+          state.playlistId = playlistId;
+          state.playlistUri = "spotify:playlist:" + playlistId;
+          state.playlistTracks = tracks;
+          state.trackUris = tracks.map((t) => t.uri);
+          applyColorMapForPlaylist(playlistId);
+        }
+
+        async function tracksForPlaylist(playlistId) {
+          if (
+            state.playlistId === playlistId &&
+            state.playlistTracks &&
+            state.playlistTracks.length
+          ) {
+            return state.playlistTracks;
+          }
           const tracks = await fetchPlaylistTracks(playlistId);
+          rememberPlaylist(playlistId, tracks);
+          return tracks;
+        }
+
+        async function fetchAllPlaylistTracks(playlistId) {
+          const tracks = await tracksForPlaylist(playlistId);
           return tracks.map((t) => t.uri);
         }
 
@@ -1941,10 +2031,12 @@
         function updateAuthUI() {
           const loggedIn = !!state.accessToken;
           $("auth-status").textContent = loggedIn
-            ? "Inloggad"
+            ? state.me && state.me.name
+              ? "Inloggad som " + state.me.name
+              : "Inloggad"
             : "Inte inloggad";
           $("auth-hint").textContent = loggedIn
-            ? "Token förnyas automatiskt under festen"
+            ? "Samma konto som äger spellistan"
             : "Kräver Spotify Premium";
           $("btn-login").textContent = loggedIn
             ? "Logga in igen"
@@ -2110,10 +2202,7 @@
             btn.disabled = true;
             btn.textContent = "Laddar…";
             if (!silent) hideBanner($("setup-error"));
-            const tracks = await fetchPlaylistTracks(playlistId);
-            state.playlistTracks = tracks;
-            state.trackUris = tracks.map((t) => t.uri);
-            applyColorMapForPlaylist(playlistId);
+            const tracks = await tracksForPlaylist(playlistId);
             renderColorMapList(playlistId, tracks);
           } catch (err) {
             if (!silent) await handleApiError(err, $("setup-error"));
@@ -2298,7 +2387,6 @@
             $("btn-start").disabled = true;
             setStatus("Laddar spellista…");
             state.trackUris = await fetchAllPlaylistTracks(state.playlistId);
-            applyColorMapForPlaylist(state.playlistId);
 
             if (state.trackUris.length < TOTAL_ROUNDS) {
               $("start-warning").hidden = false;
@@ -2669,13 +2757,7 @@
 
           try {
             $("btn-setup-save").disabled = true;
-            // Validate playlist is reachable
-            const tracks = await fetchPlaylistTracks(playlistId);
-            state.playlistId = playlistId;
-            state.playlistUri = "spotify:playlist:" + playlistId;
-            state.playlistTracks = tracks;
-            state.trackUris = tracks.map((t) => t.uri);
-            applyColorMapForPlaylist(playlistId);
+            const tracks = await tracksForPlaylist(playlistId);
             renderColorMapList(playlistId, tracks);
 
             saveSettings({
@@ -2805,6 +2887,13 @@
           loadTokensFromSession();
 
           const redirect = await handleRedirectIfNeeded();
+          if (state.accessToken) {
+            try {
+              await fetchMe();
+            } catch (err) {
+              console.warn("Could not load Spotify profile:", err);
+            }
+          }
           updateAuthUI();
 
           const ready = state.accessToken && state.playlistId && state.deviceId;
