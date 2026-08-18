@@ -1995,7 +1995,7 @@
 
         async function keepDeviceAwake() {
           if (!state.deviceId) return;
-          if (state.phase !== "judging" && state.phase !== "between") return;
+          if (state.phase === "playing" || state.phase === "countdown") return;
           let playback = null;
           try {
             playback = await spotifyFetch("/me/player");
@@ -2020,11 +2020,8 @@
             return;
           }
 
-          if (state.phase === "between") {
-            const body = lobbyPlayBody();
-            if (!body) return;
-            await playOnDevice(body, state.deviceId);
-          }
+          if (state.phase === "judging") return;
+          await ensureAmbientMusic();
         }
 
         async function holdPlayback(deviceId) {
@@ -2061,27 +2058,56 @@
           state.playbackHeld = false;
         }
 
-        function lobbyPlayBody() {
-          if (state.lobbyPlayBody) return state.lobbyPlayBody;
-          if (state.currentTrackUri) return { uris: [state.currentTrackUri] };
-          return null;
+        function isSecretPlaybackPhase() {
+          return (
+            state.phase === "playing" ||
+            state.phase === "countdown" ||
+            state.phase === "judging"
+          );
         }
 
-        async function playLobbyMusic() {
-          if (!state.deviceId) return;
+        async function ensureAmbientMusic(options) {
+          const forceLobby = !!(options && options.forceLobby);
+          if (!state.deviceId || isSecretPlaybackPhase()) return;
           try {
-            if (!state.lobbyPlayBody && state.currentTrackUri) {
-              await resumePlayback(state.deviceId);
+            let playback = null;
+            try {
+              playback = await spotifyFetch("/me/player");
+            } catch {
+              playback = null;
+            }
+            const playing = !!(playback && playback.is_playing);
+
+            if (state.lobbyPlayBody && (forceLobby || !playing || state.playbackHeld)) {
+              await playOnDevice(state.lobbyPlayBody, state.deviceId);
               startDeviceKeepAlive();
               return;
             }
-            const body = lobbyPlayBody();
-            if (!body) return;
-            await playOnDevice(body, state.deviceId);
+
+            if (state.playbackHeld) {
+              await restoreHeldVolume(state.deviceId);
+              startDeviceKeepAlive();
+              return;
+            }
+
+            if (playing) {
+              startDeviceKeepAlive();
+              return;
+            }
+
+            if (state.currentTrackUri) {
+              await playOnDevice({ uris: [state.currentTrackUri] }, state.deviceId);
+            } else {
+              await transferPlayback(state.deviceId, true);
+            }
             startDeviceKeepAlive();
           } catch (err) {
-            console.warn("Lobby music failed:", err);
+            console.warn("Ambient music failed:", err);
           }
+        }
+
+        function playLobbyMusic() {
+          return ensureAmbientMusic({ forceLobby: true });
         }
 
         async function playOnDevice(body, deviceId) {
@@ -2144,11 +2170,6 @@
             // Pausfel ska inte krascha rundan – låten kanske redan pausats
             console.warn("Pause failed:", err);
           }
-        }
-
-        async function stopPlayback(deviceId) {
-          await restoreHeldVolume(deviceId);
-          await pausePlayback(deviceId);
         }
 
         async function resumePlayback(deviceId) {
@@ -2694,15 +2715,12 @@
           setColorsEnabled(false);
           setStatus("Nedräkning…");
           hideBanner($("game-error"));
+          stopDeviceKeepAlive();
 
-          // Countdown 3-2-1 — wake Connect in parallel so iPad hasn't gone idle
+          // Countdown 3-2-1 — leave ambient music running until the quiz track starts
           const overlay = $("countdown-overlay");
           const numEl = $("countdown-num");
           overlay.classList.add("visible");
-          const wake =
-            state.deviceId && !state.playbackHeld
-              ? transferPlayback(state.deviceId, false).catch(() => {})
-              : Promise.resolve();
 
           for (const n of [3, 2, 1]) {
             numEl.textContent = String(n);
@@ -2713,7 +2731,6 @@
           }
 
           overlay.classList.remove("visible");
-          await wake;
 
           // Pick unused track
           const remaining = state.trackUris.filter(
@@ -2925,7 +2942,7 @@
           setColorsEnabled(false);
           setPlayingVisible(false);
           setNextRoundVisible(false);
-          stopPlayback(state.deviceId);
+          ensureAmbientMusic({ forceLobby: true });
 
           $("final-p1").textContent = String(state.scores[1]);
           $("final-p2").textContent = String(state.scores[2]);
@@ -2944,7 +2961,7 @@
         async function endGameConfirm() {
           const ok = await showModal({
             title: "Avsluta spelomgång?",
-            body: "Poängen nollställs. Musiken pausas.",
+            body: "Poängen nollställs. Musiken fortsätter.",
             buttons: [
               {
                 label: "Fortsätt spela",
@@ -2955,7 +2972,6 @@
             ],
           });
           if (!ok) return;
-          await stopPlayback(state.deviceId);
           state.phase = "idle";
           clearSkipUnlock();
           setColorsEnabled(false);
@@ -2963,6 +2979,7 @@
           setNextRoundVisible(false);
           showScreen("start");
           refreshStartWarnings();
+          ensureAmbientMusic({ forceLobby: true });
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -2991,6 +3008,7 @@
               handleApiError(err, $("setup-error")),
             );
             loadColorMapTracks({ silent: true });
+            if (!isSecretPlaybackPhase()) ensureAmbientMusic();
           }
         }
 
@@ -3055,15 +3073,10 @@
               lobbyInput,
             });
 
-            // Soft-transfer so device is ready
-            try {
-              await transferPlayback(state.deviceId, false);
-            } catch (e) {
-              console.warn("Transfer warning:", e);
-            }
-
             refreshStartWarnings();
             showScreen("start");
+            state.phase = "idle";
+            await ensureAmbientMusic({ forceLobby: true });
           } catch (err) {
             await handleApiError(err, $("setup-error"));
           } finally {
@@ -3157,6 +3170,7 @@
           );
           $("btn-setup-cancel").addEventListener("click", () => {
             showScreen(setupReturnScreen);
+            if (setupReturnScreen !== "game") ensureAmbientMusic();
           });
           $("btn-open-setup").addEventListener("click", () => openSetup(false));
           $("btn-start").addEventListener("click", () => startGame());
@@ -3164,8 +3178,10 @@
           $("btn-skip-round").addEventListener("click", () => skipRound());
           $("btn-end-game").addEventListener("click", () => endGameConfirm());
           $("btn-back-start").addEventListener("click", () => {
+            state.phase = "idle";
             showScreen("start");
             refreshStartWarnings();
+            ensureAmbientMusic({ forceLobby: true });
           });
 
           // Prevent accidental pinch-zoom gestures disrupting play on older iOS
@@ -3204,6 +3220,7 @@
 
           if (ready) {
             showScreen("start");
+            ensureAmbientMusic();
             // Prefetch tracks in background for warning
             fetchAllPlaylistTracks(state.playlistId)
               .then((uris) => {
