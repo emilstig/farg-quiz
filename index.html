@@ -1269,7 +1269,8 @@
           deviceId: null,
           deviceName: null,
           deviceType: null,
-          savedVolume: 80,
+          supportsVolume: true,
+          savedVolume: 100,
           duckedVolume: 28,
           heldProgressMs: 0,
           playbackHeld: false,
@@ -1978,11 +1979,47 @@
 
         async function setVolume(percent, deviceId) {
           const vol = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
-          const qs =
+          const withDevice =
             "?volume_percent=" +
             vol +
             (deviceId ? "&device_id=" + encodeURIComponent(deviceId) : "");
-          await spotifyFetch("/me/player/volume" + qs, { method: "PUT" });
+          try {
+            await spotifyFetch("/me/player/volume" + withDevice, {
+              method: "PUT",
+            });
+          } catch (err) {
+            if (!deviceId) throw err;
+            await spotifyFetch("/me/player/volume?volume_percent=" + vol, {
+              method: "PUT",
+            });
+          }
+        }
+
+        let quietVolumeTimers = [];
+
+        function clearQuietVolumeTimers() {
+          quietVolumeTimers.forEach((id) => clearTimeout(id));
+          quietVolumeTimers = [];
+        }
+
+        async function applyQuietVolume(deviceId) {
+          if (!deviceId || (!state.playbackHeld && !state.lobbyQuiet)) return;
+          try {
+            await setVolume(quietVolume(), deviceId);
+          } catch (err) {
+            console.warn("Quiet volume failed:", err);
+          }
+        }
+
+        function scheduleQuietVolume(deviceId) {
+          clearQuietVolumeTimers();
+          [200, 600, 1400].forEach((ms) => {
+            quietVolumeTimers.push(
+              setTimeout(() => {
+                applyQuietVolume(deviceId).catch(() => {});
+              }, ms),
+            );
+          });
         }
 
         let deviceKeepAliveTimer = null;
@@ -2065,7 +2102,10 @@
             playback = null;
           }
 
-          if (playbackMatchesLoop(playback, loopBody)) return;
+          if (playbackMatchesLoop(playback, loopBody)) {
+            await applyQuietVolume(state.deviceId);
+            return;
+          }
 
           const body = Object.assign({}, loopBody);
           if (
@@ -2087,7 +2127,7 @@
                 },
               );
               try {
-                await setVolume(quietVolume(), state.deviceId);
+                await applyQuietVolume(state.deviceId);
               } catch (err) {
                 console.warn("Could not re-duck loop:", err);
               }
@@ -2100,8 +2140,9 @@
         }
 
         function quietVolume() {
+          const full = state.savedVolume > 0 ? state.savedVolume : 100;
           if (state.playbackHeld && state.duckedVolume) return state.duckedVolume;
-          return Math.max(10, Math.round((state.savedVolume || 80) * 0.5));
+          return Math.max(15, Math.round(full * 0.5));
         }
 
         async function captureFullVolume() {
@@ -2121,11 +2162,12 @@
         }
 
         async function restoreFullVolume(deviceId) {
+          clearQuietVolumeTimers();
           state.playbackHeld = false;
           state.lobbyQuiet = false;
           if (!deviceId) return;
           try {
-            await setVolume(state.savedVolume || 80, deviceId);
+            await setVolume(state.savedVolume || 100, deviceId);
           } catch (err) {
             console.warn("Could not restore volume:", err);
           }
@@ -2135,15 +2177,9 @@
           if (!deviceId) return;
           await captureFullVolume();
           state.playbackHeld = false;
-          try {
-            await setVolume(
-              Math.max(10, Math.round((state.savedVolume || 80) * 0.5)),
-              deviceId,
-            );
-          } catch (err) {
-            console.warn("Could not duck lobby volume:", err);
-          }
           state.lobbyQuiet = true;
+          await applyQuietVolume(deviceId);
+          scheduleQuietVolume(deviceId);
         }
 
         async function holdPlayback(deviceId) {
@@ -2159,8 +2195,8 @@
             if (vol != null && vol > 0 && !state.lobbyQuiet) state.savedVolume = vol;
             state.heldProgressMs = playbackProgressMs(playback);
             state.duckedVolume = Math.max(
-              10,
-              Math.round((state.savedVolume || 80) * 0.5),
+              15,
+              Math.round((state.savedVolume || 100) * 0.5),
             );
             try {
               await setVolume(state.duckedVolume, deviceId);
@@ -2168,6 +2204,7 @@
               console.warn("Volume duck failed, keeping current volume:", err);
             }
             state.playbackHeld = true;
+            scheduleQuietVolume(deviceId);
             setLoopPlayBody(
               state.currentTrackUri ? { uris: [state.currentTrackUri] } : state.loopPlayBody,
             );
@@ -2206,6 +2243,7 @@
 
             if (forceLobby && state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
+              await sleep(300);
               await duckLobbyVolume(state.deviceId);
               setLoopPlayBody(state.lobbyPlayBody);
               return;
@@ -2229,6 +2267,7 @@
 
             if (state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
+              await sleep(300);
               await duckLobbyVolume(state.deviceId);
               setLoopPlayBody(state.lobbyPlayBody);
             } else {
@@ -2452,7 +2491,7 @@
                 "Enheten syns inte hos Spotify just nu. Öppna Spotify-appen, spela en låt kort, och tryck Uppdatera.";
             } else if (sleepySelected) {
               hint.textContent =
-                "iPad/telefon somnar i bakgrunden. Spelet sänker volymen istället för att pausa. Säkrost är en dator eller högtalare.";
+                "iPad/telefon styr ofta inte volym via Connect — väntemusiken kan låta lika stark. En dator eller högtalare sänker volymen.";
             }
           }
 
@@ -2478,6 +2517,7 @@
               state.deviceId = d.id;
               state.deviceName = d.name;
               state.deviceType = d.type || null;
+              state.supportsVolume = d.supports_volume !== false;
               saveSettings({
                 deviceId: d.id,
                 deviceName: d.name,
@@ -3147,6 +3187,9 @@
             state.deviceId = match.id;
             state.deviceName = match.name;
             state.deviceType = match.type || state.deviceType;
+            if (typeof match.supports_volume === "boolean") {
+              state.supportsVolume = match.supports_volume;
+            }
           }
           renderDevices(devices, state.deviceId);
         }
