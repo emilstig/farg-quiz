@@ -1005,8 +1005,8 @@
               placeholder="https://open.spotify.com/track/… eller en spellista"
             />
             <p class="hint">
-              Sätts på när ni avslutat en omgång och är tillbaka på Starta.
-              Under spelet fortsätter den avslöjade låten tills Nästa runda.
+              Sätts på när ni avslutat en omgång och är tillbaka på Starta,
+              på halv volym. Går upp till fullt när spelet startar.
             </p>
           </div>
 
@@ -1085,12 +1085,15 @@
           <h1 class="brand">Färg<span>quiz</span></h1>
           <div class="rules">
             <ol class="rules-steps">
-              <li>En hemlig låt spelas – varje låt hör ihop med en färg.</li>
+              <li>
+                En hemlig låt spelas – färgen kan höra ihop med artist, låttitel
+                eller låttext.
+              </li>
               <li>
                 Slå först på rätt färgruta på bordet, tryck sedan samma färg på
                 skärmen.
               </li>
-              <li>Rätt ger +1, fel ger −1. Bäst efter 10 rundor vinner!</li>
+              <li>Rätt ger +1, fel ger −1. Bäst av 5 rundor vinner!</li>
             </ol>
           </div>
           <div id="start-warning" class="warn" hidden></div>
@@ -1109,7 +1112,7 @@
             <div class="player-score" id="score-p1">0</div>
           </div>
           <div class="center-status">
-            <div class="round-label" id="round-label">Runda 1 av 10</div>
+            <div class="round-label" id="round-label">Runda 1 av 5</div>
             <div class="status-label" id="status-label">Gör dig redo</div>
             <div
               class="playing-indicator"
@@ -1220,7 +1223,7 @@
         const SPOTIFY_CLIENT_ID = "6ee2da17e35c4c5e8cdcf1b23d2d7749";
         const REDIRECT_URI = window.location.origin + window.location.pathname;
 
-        const TOTAL_ROUNDS = 10;
+        const TOTAL_ROUNDS = 5;
         /** Sekunder innan "Ingen visste" kan tryckas under en runda. */
         const SKIP_UNLOCK_SECONDS = 15;
 
@@ -1270,6 +1273,7 @@
           duckedVolume: 28,
           heldProgressMs: 0,
           playbackHeld: false,
+          lobbyQuiet: false,
           lobbyPlayBody: null,
           lobbyInput: "",
           loopPlayBody: null,
@@ -2074,7 +2078,7 @@
           }
 
           try {
-            if (state.playbackHeld) {
+            if (state.playbackHeld || state.lobbyQuiet) {
               await spotifyFetch(
                 "/me/player/play?device_id=" + encodeURIComponent(state.deviceId),
                 {
@@ -2083,7 +2087,7 @@
                 },
               );
               try {
-                await setVolume(state.duckedVolume || 28, state.deviceId);
+                await setVolume(quietVolume(), state.deviceId);
               } catch (err) {
                 console.warn("Could not re-duck loop:", err);
               }
@@ -2095,9 +2099,51 @@
           }
         }
 
-        function duckedVolumeFrom(percent) {
-          const vol = typeof percent === "number" ? percent : 80;
-          return Math.max(20, Math.min(55, Math.round(vol * 0.5)));
+        function quietVolume() {
+          if (state.playbackHeld && state.duckedVolume) return state.duckedVolume;
+          return Math.max(10, Math.round((state.savedVolume || 80) * 0.5));
+        }
+
+        async function captureFullVolume() {
+          if (state.playbackHeld || state.lobbyQuiet) return;
+          try {
+            const playback = await spotifyFetch("/me/player");
+            const vol =
+              playback &&
+              playback.device &&
+              typeof playback.device.volume_percent === "number"
+                ? playback.device.volume_percent
+                : null;
+            if (vol != null && vol > 0) state.savedVolume = vol;
+          } catch (err) {
+            console.warn("Could not read volume:", err);
+          }
+        }
+
+        async function restoreFullVolume(deviceId) {
+          state.playbackHeld = false;
+          state.lobbyQuiet = false;
+          if (!deviceId) return;
+          try {
+            await setVolume(state.savedVolume || 80, deviceId);
+          } catch (err) {
+            console.warn("Could not restore volume:", err);
+          }
+        }
+
+        async function duckLobbyVolume(deviceId) {
+          if (!deviceId) return;
+          await captureFullVolume();
+          state.playbackHeld = false;
+          try {
+            await setVolume(
+              Math.max(10, Math.round((state.savedVolume || 80) * 0.5)),
+              deviceId,
+            );
+          } catch (err) {
+            console.warn("Could not duck lobby volume:", err);
+          }
+          state.lobbyQuiet = true;
         }
 
         async function holdPlayback(deviceId) {
@@ -2110,9 +2156,12 @@
               typeof playback.device.volume_percent === "number"
                 ? playback.device.volume_percent
                 : null;
-            if (vol != null && vol > 0) state.savedVolume = vol;
+            if (vol != null && vol > 0 && !state.lobbyQuiet) state.savedVolume = vol;
             state.heldProgressMs = playbackProgressMs(playback);
-            state.duckedVolume = duckedVolumeFrom(state.savedVolume);
+            state.duckedVolume = Math.max(
+              10,
+              Math.round((state.savedVolume || 80) * 0.5),
+            );
             try {
               await setVolume(state.duckedVolume, deviceId);
             } catch (err) {
@@ -2132,13 +2181,7 @@
         }
 
         async function restoreHeldVolume(deviceId) {
-          if (!state.playbackHeld) return;
-          try {
-            await setVolume(state.savedVolume || 80, deviceId);
-          } catch (err) {
-            console.warn("Could not restore volume:", err);
-          }
-          state.playbackHeld = false;
+          await restoreFullVolume(deviceId);
         }
 
         function isSecretPlaybackPhase() {
@@ -2162,8 +2205,8 @@
             const playing = !!(playback && playback.is_playing);
 
             if (forceLobby && state.lobbyPlayBody) {
-              await restoreHeldVolume(state.deviceId);
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
+              await duckLobbyVolume(state.deviceId);
               setLoopPlayBody(state.lobbyPlayBody);
               return;
             }
@@ -2180,11 +2223,13 @@
                   ? { uris: [playback.item.uri] }
                   : null);
               setLoopPlayBody(body);
+              if (state.phase === "idle") await duckLobbyVolume(state.deviceId);
               return;
             }
 
             if (state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
+              await duckLobbyVolume(state.deviceId);
               setLoopPlayBody(state.lobbyPlayBody);
             } else {
               await transferPlayback(state.deviceId, true);
@@ -2795,7 +2840,8 @@
           hideBanner($("game-error"));
           stopDeviceKeepAlive();
           state.loopPlayBody = null;
-          await restoreHeldVolume(state.deviceId);
+          await restoreFullVolume(state.deviceId);
+          await sleep(150);
 
           // Countdown 3-2-1 — leave ambient music running until the quiz track starts
           const overlay = $("countdown-overlay");
@@ -2827,6 +2873,7 @@
           state.currentTrackUri = trackUri;
 
           try {
+            await restoreFullVolume(state.deviceId);
             await playUris([trackUri], state.deviceId);
             state.phase = "playing";
             setStatus("");
