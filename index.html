@@ -995,7 +995,7 @@
           </div>
 
           <div class="field">
-            <label for="lobby-input">Väntelåt mellan rundor (valfritt)</label>
+            <label for="lobby-input">Väntemusik på startskärmen (valfritt)</label>
             <input
               id="lobby-input"
               type="text"
@@ -1005,9 +1005,8 @@
               placeholder="https://open.spotify.com/track/… eller en spellista"
             />
             <p class="hint">
-              Spelas efter att svaret visats, medan ni väntar på Nästa runda.
-              Utan väntelåt fortsätter den avslöjade låten — det håller iPad
-              vaken.
+              Sätts på när ni avslutat en omgång och är tillbaka på Starta.
+              Under spelet fortsätter den avslöjade låten tills Nästa runda.
             </p>
           </div>
 
@@ -2084,7 +2083,7 @@
             }
             const playing = !!(playback && playback.is_playing);
 
-            if (state.lobbyPlayBody && (forceLobby || !playing || state.playbackHeld)) {
+            if (forceLobby && state.lobbyPlayBody) {
               await playOnDevice(state.lobbyPlayBody, state.deviceId);
               startDeviceKeepAlive();
               return;
@@ -2101,8 +2100,14 @@
               return;
             }
 
-            if (state.currentTrackUri) {
+            if (state.currentTrackUri && state.phase !== "idle") {
               await playOnDevice({ uris: [state.currentTrackUri] }, state.deviceId);
+              startDeviceKeepAlive();
+              return;
+            }
+
+            if (state.lobbyPlayBody) {
+              await playOnDevice(state.lobbyPlayBody, state.deviceId);
             } else {
               await transferPlayback(state.deviceId, true);
             }
@@ -2110,10 +2115,6 @@
           } catch (err) {
             console.warn("Ambient music failed:", err);
           }
-        }
-
-        function playLobbyMusic() {
-          return ensureAmbientMusic({ forceLobby: true });
         }
 
         async function playOnDevice(body, deviceId) {
@@ -2882,7 +2883,7 @@
           } else {
             $("btn-next-round").textContent = "Nästa runda";
             setNextRoundVisible(true);
-            playLobbyMusic();
+            ensureAmbientMusic();
           }
         }
 
@@ -2938,7 +2939,7 @@
           } else {
             $("btn-next-round").textContent = "Nästa runda";
             setNextRoundVisible(true);
-            playLobbyMusic();
+            ensureAmbientMusic();
           }
         }
 
@@ -2948,7 +2949,7 @@
           setColorsEnabled(false);
           setPlayingVisible(false);
           setNextRoundVisible(false);
-          ensureAmbientMusic({ forceLobby: true });
+          ensureAmbientMusic();
 
           $("final-p1").textContent = String(state.scores[1]);
           $("final-p2").textContent = String(state.scores[2]);
