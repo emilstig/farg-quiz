@@ -1268,6 +1268,7 @@
           deviceName: null,
           deviceType: null,
           savedVolume: 80,
+          duckedVolume: 28,
           playbackHeld: false,
           lobbyPlayBody: null,
           lobbyInput: "",
@@ -2013,9 +2014,9 @@
               },
             );
             try {
-              await setVolume(0, state.deviceId);
+              await setVolume(state.duckedVolume || 28, state.deviceId);
             } catch (err) {
-              console.warn("Could not re-mute keep-alive:", err);
+              console.warn("Could not re-duck keep-alive:", err);
             }
             return;
           }
@@ -2024,25 +2025,30 @@
           await ensureAmbientMusic();
         }
 
+        function duckedVolumeFrom(percent) {
+          const vol = typeof percent === "number" ? percent : 80;
+          return Math.max(20, Math.min(55, Math.round(vol * 0.5)));
+        }
+
         async function holdPlayback(deviceId) {
-          if (isSleepyDevice(state.deviceType, state.deviceName) && deviceId) {
-            try {
-              const playback = await spotifyFetch("/me/player");
-              const vol =
-                playback &&
-                playback.device &&
-                typeof playback.device.volume_percent === "number"
-                  ? playback.device.volume_percent
-                  : null;
-              if (vol != null && vol > 0) state.savedVolume = vol;
-              await setVolume(0, deviceId);
-              state.playbackHeld = true;
-              startDeviceKeepAlive();
-              return;
-            } catch (err) {
-              console.warn("Mute hold failed, pausing instead:", err);
-              state.playbackHeld = false;
-            }
+          if (!deviceId) return;
+          try {
+            const playback = await spotifyFetch("/me/player");
+            const vol =
+              playback &&
+              playback.device &&
+              typeof playback.device.volume_percent === "number"
+                ? playback.device.volume_percent
+                : null;
+            if (vol != null && vol > 0) state.savedVolume = vol;
+            state.duckedVolume = duckedVolumeFrom(state.savedVolume);
+            await setVolume(state.duckedVolume, deviceId);
+            state.playbackHeld = true;
+            startDeviceKeepAlive();
+            return;
+          } catch (err) {
+            console.warn("Volume duck failed, pausing instead:", err);
+            state.playbackHeld = false;
           }
           await pausePlayback(deviceId);
         }
@@ -2329,7 +2335,7 @@
                 "Enheten syns inte hos Spotify just nu. Öppna Spotify-appen, spela en låt kort, och tryck Uppdatera.";
             } else if (sleepySelected) {
               hint.textContent =
-                "iPad/telefon somnar i bakgrunden. Spelet tystar istället för att pausa. Säkrost är en dator eller högtalare.";
+                "iPad/telefon somnar i bakgrunden. Spelet sänker volymen istället för att pausa. Säkrost är en dator eller högtalare.";
             }
           }
 
@@ -2783,7 +2789,7 @@
           clearSkipUnlock();
           setColorsEnabled(false);
           setPlayingVisible(false);
-          setStatus("Pausar…");
+          setStatus("");
 
           await holdPlayback(state.deviceId);
           // Fetch track info now, but don't reveal until player is confirmed
