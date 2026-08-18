@@ -352,6 +352,10 @@
         background: rgba(29, 185, 84, 0.12);
       }
 
+      .device-item.asleep {
+        opacity: 0.7;
+      }
+
       .device-item .dot {
         width: 10px;
         height: 10px;
@@ -955,7 +959,8 @@
           <h1 class="brand">Färg<span>quiz</span></h1>
           <p class="lede">
             Logga in, välj spellista och vilken Spotify Connect-enhet som ska
-            spela upp ljudet. iPaden är bara fjärrkontroll.
+            spela upp ljudet. Bäst: iPaden styr, en dator eller högtalare
+            spelar — iPad som högtalare somnar när Spotify hamnar i bakgrunden.
           </p>
 
           <div id="setup-error" class="error-banner" role="alert"></div>
@@ -989,6 +994,23 @@
             </p>
           </div>
 
+          <div class="field">
+            <label for="lobby-input">Väntelåt mellan rundor (valfritt)</label>
+            <input
+              id="lobby-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://open.spotify.com/track/… eller en spellista"
+            />
+            <p class="hint">
+              Spelas efter att svaret visats, medan ni väntar på Nästa runda.
+              Utan väntelåt fortsätter den avslöjade låten — det håller iPad
+              vaken.
+            </p>
+          </div>
+
           <div class="panel">
             <div class="row-between" style="margin-bottom: 0.75rem">
               <strong>Spotify Connect-enhet</strong>
@@ -1008,6 +1030,7 @@
             <div id="device-list" class="device-list">
               <p class="hint">Logga in för att se enheter.</p>
             </div>
+            <p class="hint" id="device-hint"></p>
           </div>
 
           <div class="panel" id="color-map-panel">
@@ -1243,6 +1266,11 @@
           playlistUri: null,
           deviceId: null,
           deviceName: null,
+          deviceType: null,
+          savedVolume: 80,
+          playbackHeld: false,
+          lobbyPlayBody: null,
+          lobbyInput: "",
           trackUris: [],
           playlistTracks: [],
           colorMap: {},
@@ -1379,6 +1407,29 @@
           );
           if (m) return m[1];
           if (/^[a-zA-Z0-9]{22}$/.test(raw)) return raw;
+          return null;
+        }
+
+        function parseTrackUri(input) {
+          const raw = (input || "").trim();
+          if (!raw) return null;
+          let m = raw.match(/spotify:track:([a-zA-Z0-9]+)/);
+          if (m) return "spotify:track:" + m[1];
+          m = raw.match(
+            /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?track\/([a-zA-Z0-9]+)/i,
+          );
+          if (m) return "spotify:track:" + m[1];
+          if (/^[a-zA-Z0-9]{22}$/.test(raw)) return "spotify:track:" + raw;
+          return null;
+        }
+
+        function parseLobbyPlayBody(input) {
+          const raw = (input || "").trim();
+          if (!raw) return null;
+          const trackUri = parseTrackUri(raw);
+          if (trackUri) return { uris: [trackUri] };
+          const playlistId = parsePlaylistId(raw);
+          if (playlistId) return { context_uri: "spotify:playlist:" + playlistId };
           return null;
         }
 
@@ -1689,6 +1740,27 @@
         }
         DeviceError.prototype = Object.create(Error.prototype);
 
+        function isSleepyDevice(type, name) {
+          const t = String(type || "").toLowerCase();
+          const n = String(name || "").toLowerCase();
+          return (
+            t === "tablet" ||
+            t === "smartphone" ||
+            /\b(ipad|iphone|ipod|android|phone)\b/.test(n)
+          );
+        }
+
+        function inactiveDeviceMessage() {
+          if (isSleepyDevice(state.deviceType, state.deviceName)) {
+            return (
+              "iPad/telefon försvinner från Connect när Spotify pausas eller hamnar i bakgrunden. Öppna Spotify-appen, spela en låt kort, och tryck Försök igen. En dator eller högtalare sover inte på samma sätt."
+            );
+          }
+          return (
+            "Ingen aktiv Spotify Connect-enhet. Öppna Spotify på högtalarenheten, spela en låt kort, och välj den här."
+          );
+        }
+
         function PlaylistAccessError(message) {
           this.name = "PlaylistAccessError";
           this.message = message;
@@ -1745,9 +1817,7 @@
                 String(msg),
               )
             ) {
-              throw new DeviceError(
-                "Ingen aktiv Spotify Connect-enhet. Öppna Spotify på högtalarenheten och välj den här.",
-              );
+              throw new DeviceError(inactiveDeviceMessage());
             }
             if (res.status === 403 && /\/playlists\/[^/]+\/items/i.test(path)) {
               throw new PlaylistAccessError(
@@ -1895,30 +1965,173 @@
           });
         }
 
-        async function playUris(uris, deviceId) {
-          const qs = deviceId
-            ? "?device_id=" + encodeURIComponent(deviceId)
-            : "";
+        async function setVolume(percent, deviceId) {
+          const vol = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+          const qs =
+            "?volume_percent=" +
+            vol +
+            (deviceId ? "&device_id=" + encodeURIComponent(deviceId) : "");
+          await spotifyFetch("/me/player/volume" + qs, { method: "PUT" });
+        }
+
+        let deviceKeepAliveTimer = null;
+
+        function stopDeviceKeepAlive() {
+          if (deviceKeepAliveTimer) {
+            clearInterval(deviceKeepAliveTimer);
+            deviceKeepAliveTimer = null;
+          }
+        }
+
+        function startDeviceKeepAlive() {
+          stopDeviceKeepAlive();
+          if (!isSleepyDevice(state.deviceType, state.deviceName)) return;
+          deviceKeepAliveTimer = setInterval(() => {
+            keepDeviceAwake().catch((err) =>
+              console.warn("Keep-alive failed:", err),
+            );
+          }, 15000);
+        }
+
+        async function keepDeviceAwake() {
+          if (!state.deviceId) return;
+          if (state.phase !== "judging" && state.phase !== "between") return;
+          let playback = null;
           try {
-            await spotifyFetch("/me/player/play" + qs, {
-              method: "PUT",
-              body: JSON.stringify({ uris }),
-            });
-          } catch (err) {
-            if (err instanceof DeviceError && deviceId) {
-              await transferPlayback(deviceId, false);
-              await sleep(400);
-              await spotifyFetch(
-                "/me/player/play?device_id=" + encodeURIComponent(deviceId),
-                {
-                  method: "PUT",
-                  body: JSON.stringify({ uris }),
-                },
-              );
+            playback = await spotifyFetch("/me/player");
+          } catch {
+            playback = null;
+          }
+          if (playback && playback.is_playing) return;
+
+          if (state.phase === "judging" && state.playbackHeld && state.currentTrackUri) {
+            await spotifyFetch(
+              "/me/player/play?device_id=" + encodeURIComponent(state.deviceId),
+              {
+                method: "PUT",
+                body: JSON.stringify({ uris: [state.currentTrackUri] }),
+              },
+            );
+            try {
+              await setVolume(0, state.deviceId);
+            } catch (err) {
+              console.warn("Could not re-mute keep-alive:", err);
+            }
+            return;
+          }
+
+          if (state.phase === "between") {
+            const body = lobbyPlayBody();
+            if (!body) return;
+            await playOnDevice(body, state.deviceId);
+          }
+        }
+
+        async function holdPlayback(deviceId) {
+          if (isSleepyDevice(state.deviceType, state.deviceName) && deviceId) {
+            try {
+              const playback = await spotifyFetch("/me/player");
+              const vol =
+                playback &&
+                playback.device &&
+                typeof playback.device.volume_percent === "number"
+                  ? playback.device.volume_percent
+                  : null;
+              if (vol != null && vol > 0) state.savedVolume = vol;
+              await setVolume(0, deviceId);
+              state.playbackHeld = true;
+              startDeviceKeepAlive();
               return;
+            } catch (err) {
+              console.warn("Mute hold failed, pausing instead:", err);
+              state.playbackHeld = false;
+            }
+          }
+          await pausePlayback(deviceId);
+        }
+
+        async function restoreHeldVolume(deviceId) {
+          stopDeviceKeepAlive();
+          if (!state.playbackHeld) return;
+          try {
+            await setVolume(state.savedVolume || 80, deviceId);
+          } catch (err) {
+            console.warn("Could not restore volume:", err);
+          }
+          state.playbackHeld = false;
+        }
+
+        function lobbyPlayBody() {
+          if (state.lobbyPlayBody) return state.lobbyPlayBody;
+          if (state.currentTrackUri) return { uris: [state.currentTrackUri] };
+          return null;
+        }
+
+        async function playLobbyMusic() {
+          if (!state.deviceId) return;
+          try {
+            if (!state.lobbyPlayBody && state.currentTrackUri) {
+              await resumePlayback(state.deviceId);
+              startDeviceKeepAlive();
+              return;
+            }
+            const body = lobbyPlayBody();
+            if (!body) return;
+            await playOnDevice(body, state.deviceId);
+            startDeviceKeepAlive();
+          } catch (err) {
+            console.warn("Lobby music failed:", err);
+          }
+        }
+
+        async function playOnDevice(body, deviceId) {
+          if (!body) return;
+          const play = () => {
+            const qs = deviceId
+              ? "?device_id=" + encodeURIComponent(deviceId)
+              : "";
+            return spotifyFetch("/me/player/play" + qs, {
+              method: "PUT",
+              body: JSON.stringify(body),
+            });
+          };
+
+          const restoreAfterPlay = async () => {
+            if (state.playbackHeld) await restoreHeldVolume(deviceId);
+          };
+
+          try {
+            await play();
+            await restoreAfterPlay();
+            return;
+          } catch (err) {
+            if (!(err instanceof DeviceError) || !deviceId) throw err;
+          }
+
+          try {
+            await transferPlayback(deviceId, false);
+            await sleep(500);
+            await play();
+            await restoreAfterPlay();
+            return;
+          } catch {
+            // Device may still accept a direct play after a short wait
+          }
+
+          await sleep(400);
+          try {
+            await play();
+            await restoreAfterPlay();
+          } catch (err) {
+            if (err instanceof DeviceError) {
+              throw new DeviceError(inactiveDeviceMessage());
             }
             throw err;
           }
+        }
+
+        async function playUris(uris, deviceId) {
+          return playOnDevice({ uris }, deviceId);
         }
 
         async function pausePlayback(deviceId) {
@@ -1933,7 +2146,16 @@
           }
         }
 
+        async function stopPlayback(deviceId) {
+          await restoreHeldVolume(deviceId);
+          await pausePlayback(deviceId);
+        }
+
         async function resumePlayback(deviceId) {
+          if (state.playbackHeld) {
+            await restoreHeldVolume(deviceId);
+            return;
+          }
           const qs = deviceId
             ? "?device_id=" + encodeURIComponent(deviceId)
             : "";
@@ -2045,9 +2267,27 @@
 
         function renderDevices(devices, selectedId) {
           const list = $("device-list");
+          const hint = $("device-hint");
           list.innerHTML = "";
+          if (hint) hint.textContent = "";
 
-          if (!devices.length) {
+          const merged = Array.isArray(devices) ? devices.slice() : [];
+          if (
+            selectedId &&
+            !merged.some((d) => d.id === selectedId) &&
+            (state.deviceName || state.deviceId)
+          ) {
+            merged.unshift({
+              id: selectedId,
+              name: state.deviceName || "Senast vald enhet",
+              type: state.deviceType || "Enhet",
+              is_active: false,
+              is_restricted: false,
+              _asleep: true,
+            });
+          }
+
+          if (!merged.length) {
             const p = document.createElement("p");
             p.className = "hint";
             p.textContent =
@@ -2056,12 +2296,29 @@
             return;
           }
 
-          devices.forEach((d) => {
+          const asleep = merged.some((d) => d._asleep);
+          const sleepySelected = merged.some(
+            (d) =>
+              d.id === selectedId &&
+              isSleepyDevice(d.type, d.name),
+          );
+          if (hint) {
+            if (asleep) {
+              hint.textContent =
+                "Enheten syns inte hos Spotify just nu. Öppna Spotify-appen, spela en låt kort, och tryck Uppdatera.";
+            } else if (sleepySelected) {
+              hint.textContent =
+                "iPad/telefon somnar i bakgrunden. Spelet tystar istället för att pausa. Säkrost är en dator eller högtalare.";
+            }
+          }
+
+          merged.forEach((d) => {
             const btn = document.createElement("button");
             btn.type = "button";
             btn.className = "device-item";
             if (d.id === selectedId) btn.classList.add("selected");
             if (d.is_active) btn.classList.add("active");
+            if (d._asleep) btn.classList.add("asleep");
 
             btn.innerHTML =
               '<span class="dot"></span><span><div>' +
@@ -2069,13 +2326,19 @@
               '</div><div class="device-meta">' +
               escapeHtml(d.type || "Enhet") +
               (d.is_active ? " · aktiv" : "") +
+              (d._asleep ? " · somnad" : "") +
               (d.is_restricted ? " · begränsad" : "") +
               "</div></span>";
 
             btn.addEventListener("click", () => {
               state.deviceId = d.id;
               state.deviceName = d.name;
-              saveSettings({ deviceId: d.id, deviceName: d.name });
+              state.deviceType = d.type || null;
+              saveSettings({
+                deviceId: d.id,
+                deviceName: d.name,
+                deviceType: d.type || null,
+              });
               renderDevices(devices, d.id);
             });
 
@@ -2432,10 +2695,14 @@
           setStatus("Nedräkning…");
           hideBanner($("game-error"));
 
-          // Countdown 3-2-1
+          // Countdown 3-2-1 — wake Connect in parallel so iPad hasn't gone idle
           const overlay = $("countdown-overlay");
           const numEl = $("countdown-num");
           overlay.classList.add("visible");
+          const wake =
+            state.deviceId && !state.playbackHeld
+              ? transferPlayback(state.deviceId, false).catch(() => {})
+              : Promise.resolve();
 
           for (const n of [3, 2, 1]) {
             numEl.textContent = String(n);
@@ -2446,6 +2713,7 @@
           }
 
           overlay.classList.remove("visible");
+          await wake;
 
           // Pick unused track
           const remaining = state.trackUris.filter(
@@ -2500,7 +2768,7 @@
           setPlayingVisible(false);
           setStatus("Pausar…");
 
-          await pausePlayback(state.deviceId);
+          await holdPlayback(state.deviceId);
           // Fetch track info now, but don't reveal until player is confirmed
           // so × can undo without spoiling the song.
           const trackInfo = await fetchRevealedTrackInfo();
@@ -2591,6 +2859,7 @@
           } else {
             $("btn-next-round").textContent = "Nästa runda";
             setNextRoundVisible(true);
+            playLobbyMusic();
           }
         }
 
@@ -2624,7 +2893,7 @@
           setPlayingVisible(false);
           setStatus("Hoppar över…");
 
-          await pausePlayback(state.deviceId);
+          await holdPlayback(state.deviceId);
           const trackInfo = await fetchRevealedTrackInfo();
 
           await showModal({
@@ -2646,6 +2915,7 @@
           } else {
             $("btn-next-round").textContent = "Nästa runda";
             setNextRoundVisible(true);
+            playLobbyMusic();
           }
         }
 
@@ -2655,7 +2925,7 @@
           setColorsEnabled(false);
           setPlayingVisible(false);
           setNextRoundVisible(false);
-          pausePlayback(state.deviceId);
+          stopPlayback(state.deviceId);
 
           $("final-p1").textContent = String(state.scores[1]);
           $("final-p2").textContent = String(state.scores[2]);
@@ -2685,7 +2955,7 @@
             ],
           });
           if (!ok) return;
-          await pausePlayback(state.deviceId);
+          await stopPlayback(state.deviceId);
           state.phase = "idle";
           clearSkipUnlock();
           setColorsEnabled(false);
@@ -2710,6 +2980,8 @@
           const settings = loadSettings();
           if (settings.playlistInput)
             $("playlist-input").value = settings.playlistInput;
+          if (settings.lobbyInput != null)
+            $("lobby-input").value = settings.lobbyInput;
           hideBanner($("setup-error"));
           updateAuthUI();
           showScreen("setup");
@@ -2725,8 +2997,11 @@
         async function refreshDeviceList() {
           const devices = await fetchDevices();
           const selected = state.deviceId || loadSettings().deviceId || null;
-          if (selected && devices.some((d) => d.id === selected)) {
-            state.deviceId = selected;
+          const match = selected && devices.find((d) => d.id === selected);
+          if (match) {
+            state.deviceId = match.id;
+            state.deviceName = match.name;
+            state.deviceType = match.type || state.deviceType;
           }
           renderDevices(devices, state.deviceId);
         }
@@ -2755,16 +3030,29 @@
             return;
           }
 
+          const lobbyInput = $("lobby-input").value.trim();
+          const lobbyBody = lobbyInput ? parseLobbyPlayBody(lobbyInput) : null;
+          if (lobbyInput && !lobbyBody) {
+            showSetupError(
+              "Väntelåten måste vara en Spotify-låt eller spellista (URL eller URI).",
+            );
+            return;
+          }
+
           try {
             $("btn-setup-save").disabled = true;
             const tracks = await tracksForPlaylist(playlistId);
             renderColorMapList(playlistId, tracks);
+            state.lobbyInput = lobbyInput;
+            state.lobbyPlayBody = lobbyBody;
 
             saveSettings({
               playlistInput: input.trim(),
               playlistId,
               deviceId: state.deviceId,
               deviceName: state.deviceName,
+              deviceType: state.deviceType,
+              lobbyInput,
             });
 
             // Soft-transfer so device is ready
@@ -2806,9 +3094,15 @@
             applyColorMapForPlaylist(s.playlistId);
           }
           if (s.playlistInput) $("playlist-input").value = s.playlistInput;
+          if (s.lobbyInput) {
+            $("lobby-input").value = s.lobbyInput;
+            state.lobbyInput = s.lobbyInput;
+            state.lobbyPlayBody = parseLobbyPlayBody(s.lobbyInput);
+          }
           if (s.deviceId) {
             state.deviceId = s.deviceId;
             state.deviceName = s.deviceName || null;
+            state.deviceType = s.deviceType || null;
           }
         }
 
