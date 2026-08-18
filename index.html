@@ -1,1778 +1,2840 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="sv">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Färgspelet</title>
-  <style>
-    :root {
-      --bg: #0c0c0e;
-      --bg-elevated: #16161a;
-      --surface: #1e1e24;
-      --text: #f4f4f5;
-      --text-muted: #a1a1aa;
-      --accent: #1db954;
-      --accent-dim: #169c46;
-      --danger: #ef4444;
-      --border: #2a2a32;
-      --overlay: rgba(0, 0, 0, 0.72);
-      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      --touch-min: 56px;
-      --radius: 16px;
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html, body {
-      height: 100%;
-      overflow: hidden;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font);
-      -webkit-tap-highlight-color: transparent;
-      -webkit-user-select: none;
-      user-select: none;
-      touch-action: manipulation;
-    }
-
-    button, input {
-      font: inherit;
-      color: inherit;
-      -webkit-user-select: text;
-      user-select: text;
-    }
-
-    button {
-      -webkit-user-select: none;
-      user-select: none;
-      cursor: pointer;
-      border: none;
-      background: none;
-    }
-
-    #app {
-      height: 100%;
-      width: 100%;
-      position: relative;
-      background:
-        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(29, 185, 84, 0.08), transparent 50%),
-        radial-gradient(ellipse 70% 45% at 85% 90%, rgba(99, 102, 241, 0.07), transparent 45%),
-        var(--bg);
-    }
-
-    .screen {
-      display: none;
-      height: 100%;
-      width: 100%;
-      padding:
-        calc(20px + var(--safe-top))
-        calc(24px + var(--safe-right))
-        calc(20px + var(--safe-bottom))
-        calc(24px + var(--safe-left));
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .screen.active { display: flex; flex-direction: column; }
-
-    /* ——— Shared UI ——— */
-    .brand {
-      font-size: clamp(2rem, 5vw, 3.2rem);
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      line-height: 1.1;
-    }
-
-    .brand span { color: var(--accent); }
-
-    .lede {
-      color: var(--text-muted);
-      font-size: clamp(0.95rem, 1.6vw, 1.15rem);
-      line-height: 1.5;
-      max-width: 42rem;
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      min-height: var(--touch-min);
-      padding: 0.85rem 1.6rem;
-      border-radius: 999px;
-      font-weight: 700;
-      font-size: 1.1rem;
-      transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
-    }
-
-    .btn:active { transform: scale(0.97); }
-    .btn:disabled { opacity: 0.45; pointer-events: none; }
-
-    .btn-primary {
-      background: var(--accent);
-      color: #04140a;
-    }
-
-    .btn-primary:active { background: var(--accent-dim); }
-
-    .btn-secondary {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    .btn-ghost {
-      color: var(--text-muted);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      min-height: auto;
-      padding: 0.5rem;
-      font-weight: 600;
-      font-size: 0.95rem;
-      border-radius: 8px;
-    }
-
-    .btn-danger {
-      background: rgba(239, 68, 68, 0.15);
-      color: #fca5a5;
-      border: 1px solid rgba(239, 68, 68, 0.35);
-    }
-
-    .btn-lg {
-      min-height: 72px;
-      font-size: 1.35rem;
-      padding: 1rem 2.4rem;
-    }
-
-    .btn-block { width: 100%; }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 0.45rem;
-    }
-
-    .field label {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .field input {
-      min-height: var(--touch-min);
-      padding: 0.75rem 1rem;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
-      color: var(--text);
-      outline: none;
-      font-size: 1rem;
-      -webkit-user-select: text;
-      user-select: text;
-    }
-
-    .field input:focus { border-color: var(--accent); }
-
-    .hint {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    .warn {
-      padding: 0.85rem 1rem;
-      border-radius: 12px;
-      background: rgba(234, 179, 8, 0.12);
-      border: 1px solid rgba(234, 179, 8, 0.35);
-      color: #fde68a;
-      font-size: 0.95rem;
-      line-height: 1.4;
-    }
-
-    .error-banner {
-      padding: 0.85rem 1rem;
-      border-radius: 12px;
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #fecaca;
-      font-size: 0.95rem;
-      line-height: 1.4;
-      display: none;
-      gap: 0.75rem;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-    }
-
-    .error-banner.visible { display: flex; }
-
-    .panel {
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem;
-    }
-
-    .device-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-      max-height: 220px;
-      overflow-y: auto;
-    }
-
-    .device-item {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      min-height: var(--touch-min);
-      padding: 0.65rem 1rem;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      text-align: left;
-      width: 100%;
-      font-weight: 600;
-    }
-
-    .device-item.selected {
-      border-color: var(--accent);
-      background: rgba(29, 185, 84, 0.12);
-    }
-
-    .device-item .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #52525b;
-      flex-shrink: 0;
-    }
-
-    .device-item.selected .dot,
-    .device-item.active .dot { background: var(--accent); }
-
-    .device-meta {
-      font-size: 0.8rem;
-      font-weight: 500;
-      color: var(--text-muted);
-    }
-
-    .row {
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .row-between {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      flex-wrap: wrap;
-    }
-
-    /* ——— Setup ——— */
-    #screen-setup {
-      justify-content: center;
-      align-items: center;
-    }
-
-    .setup-card {
-      width: min(640px, 100%);
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
-
-    .setup-card .brand { margin-bottom: 0.25rem; }
-
-    /* ——— Start ——— */
-    #screen-start {
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-    }
-
-    .start-card {
-      width: min(720px, 100%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1.5rem;
-    }
-
-    .rules {
-      text-align: left;
-      font-size: clamp(1rem, 1.8vw, 1.2rem);
-      line-height: 1.55;
-      color: var(--text);
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.35rem 1.5rem;
-    }
-
-    /* ——— Game ——— */
-    #screen-game {
-      padding: calc(12px + var(--safe-top)) calc(16px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(16px + var(--safe-left));
-      display: none;
-      flex-direction: column;
-      gap: 10px;
-      height: 100%;
-      overflow: hidden;
-    }
-
-    #screen-game.active { display: flex; }
-
-    .game-top {
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
-      min-height: 110px;
-    }
-
-    .player-panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 0.5rem 1rem;
-      border-radius: var(--radius);
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      transition: box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-      min-height: 100px;
-    }
-
-    .player-panel.flash-up {
-      border-color: var(--accent);
-      background: rgba(29, 185, 84, 0.18);
-      box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.25);
-    }
-
-    .player-panel.flash-down {
-      border-color: var(--danger);
-      background: rgba(239, 68, 68, 0.18);
-      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
-    }
-
-    .player-panel.p1 { transform: rotate(180deg); }
-
-    .player-name {
-      font-size: 0.95rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-    }
-
-    .player-score {
-      font-size: clamp(2.8rem, 8vw, 4.5rem);
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -0.04em;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .center-status {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.35rem;
-      text-align: center;
-      min-width: 180px;
-    }
-
-    .round-label {
-      font-size: clamp(1rem, 2vw, 1.25rem);
-      font-weight: 700;
-      color: var(--text-muted);
-    }
-
-    .status-label {
-      font-size: clamp(1.1rem, 2.4vw, 1.5rem);
-      font-weight: 800;
-      min-height: 1.4em;
-    }
-
-    .playing-indicator {
-      display: none;
-      align-items: center;
-      gap: 0.5rem;
-      color: var(--accent);
-      font-weight: 700;
-    }
-
-    .playing-indicator.visible { display: inline-flex; }
-
-    .eq {
-      display: inline-flex;
-      align-items: flex-end;
-      gap: 3px;
-      height: 18px;
-    }
-
-    .eq span {
-      width: 4px;
-      background: var(--accent);
-      border-radius: 2px;
-      animation: eq 0.9s ease-in-out infinite;
-    }
-
-    .eq span:nth-child(1) { height: 6px; animation-delay: 0s; }
-    .eq span:nth-child(2) { height: 14px; animation-delay: 0.15s; }
-    .eq span:nth-child(3) { height: 9px; animation-delay: 0.3s; }
-    .eq span:nth-child(4) { height: 16px; animation-delay: 0.1s; }
-
-    @keyframes eq {
-      0%, 100% { transform: scaleY(0.45); }
-      50% { transform: scaleY(1); }
-    }
-
-    .countdown-overlay {
-      position: absolute;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: var(--overlay);
-      z-index: 40;
-      backdrop-filter: blur(4px);
-    }
-
-    .countdown-overlay.visible { display: flex; }
-
-    .countdown-num {
-      font-size: clamp(6rem, 25vw, 12rem);
-      font-weight: 900;
-      line-height: 1;
-      animation: pop 0.45s ease;
-    }
-
-    @keyframes pop {
-      0% { transform: scale(0.5); opacity: 0; }
-      60% { transform: scale(1.08); opacity: 1; }
-      100% { transform: scale(1); }
-    }
-
-    .color-grid {
-      flex: 1;
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      grid-template-rows: repeat(2, 1fr);
-      gap: 12px;
-      min-height: 0;
-    }
-
-    .color-btn {
-      border-radius: 18px;
-      border: 3px solid rgba(255, 255, 255, 0.12);
-      min-height: 0;
-      position: relative;
-      box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.2);
-      transition: transform 0.1s ease, filter 0.15s ease, opacity 0.15s ease;
-    }
-
-    .color-btn:active:not(:disabled) { transform: scale(0.96); }
-    .color-btn:disabled {
-      opacity: 0.35;
-      filter: grayscale(0.3);
-      pointer-events: none;
-    }
-
-    .color-btn[data-id="white"] {
-      border-color: rgba(0, 0, 0, 0.2);
-      box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.08);
-    }
-
-    .color-btn[data-id="black"] {
-      border-color: rgba(255, 255, 255, 0.25);
-    }
-
-    .game-bottom {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-      flex-shrink: 0;
-    }
-
-    .btn-end-game {
-      min-height: 44px;
-      padding: 0.5rem 0.9rem;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      border-radius: 10px;
-      border: 1px solid transparent;
-    }
-
-    .btn-end-game:active {
-      border-color: var(--border);
-      background: var(--surface);
-    }
-
-    #btn-next-round {
-      display: none;
-      margin-left: auto;
-    }
-
-    #btn-next-round.visible { display: inline-flex; }
-
-    /* ——— Results ——— */
-    #screen-results {
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-    }
-
-    .results-card {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1.25rem;
-      width: min(560px, 100%);
-    }
-
-    .winner-title {
-      font-size: clamp(2rem, 6vw, 3.5rem);
-      font-weight: 900;
-      letter-spacing: -0.03em;
-    }
-
-    .final-scores {
-      display: flex;
-      gap: 2rem;
-      font-size: 1.5rem;
-      font-weight: 700;
-    }
-
-    .final-scores strong {
-      display: block;
-      font-size: clamp(2.5rem, 8vw, 4rem);
-      font-variant-numeric: tabular-nums;
-    }
-
-    /* ——— Modal ——— */
-    .modal-root {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: var(--overlay);
-      z-index: 50;
-      padding: 24px;
-      backdrop-filter: blur(6px);
-    }
-
-    .modal-root.visible { display: flex; }
-
-    .modal {
-      width: min(520px, 100%);
-      background: var(--bg-elevated);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 1.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-      text-align: center;
-    }
-
-    .modal h2 {
-      font-size: clamp(1.4rem, 3vw, 1.85rem);
-      font-weight: 800;
-    }
-
-    .modal-color-preview {
-      width: 100%;
-      height: 72px;
-      border-radius: 14px;
-      border: 2px solid rgba(255, 255, 255, 0.15);
-    }
-
-    .modal-actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-
-    .modal-actions.single { grid-template-columns: 1fr; }
-
-    .modal-actions .btn { min-height: 64px; font-size: 1.15rem; }
-
-    /* Landscape iPad-ish tweaks */
-    @media (max-height: 700px) {
-      .game-top { min-height: 88px; }
-      .player-panel { min-height: 80px; padding: 0.35rem 0.75rem; }
-      .player-score { font-size: clamp(2.2rem, 7vw, 3.5rem); }
-      .color-grid { gap: 8px; }
-      .color-btn { border-radius: 14px; }
-    }
-
-    @media (orientation: portrait) {
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <title>Färgquiz</title>
+    <style>
+      :root {
+        --bg: #0c0c0e;
+        --bg-elevated: #16161a;
+        --surface: #1e1e24;
+        --text: #f4f4f5;
+        --text-muted: #a1a1aa;
+        --accent: #1db954;
+        --accent-dim: #169c46;
+        --danger: #ef4444;
+        --border: #2a2a32;
+        --overlay: rgba(0, 0, 0, 0.72);
+        --font:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        --touch-min: 56px;
+        --radius: 16px;
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-left: env(safe-area-inset-left, 0px);
+        --safe-right: env(safe-area-inset-right, 0px);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+      }
+
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      button {
+        -webkit-user-select: none;
+        user-select: none;
+        cursor: pointer;
+        border: none;
+        background: none;
+      }
+
+      #app {
+        height: 100%;
+        width: 100%;
+        position: relative;
+        background:
+          radial-gradient(
+            ellipse 80% 50% at 20% 10%,
+            rgba(29, 185, 84, 0.08),
+            transparent 50%
+          ),
+          radial-gradient(
+            ellipse 70% 45% at 85% 90%,
+            rgba(99, 102, 241, 0.07),
+            transparent 45%
+          ),
+          var(--bg);
+      }
+
+      .screen {
+        display: none;
+        height: 100%;
+        width: 100%;
+        padding: calc(20px + var(--safe-top)) calc(24px + var(--safe-right))
+          calc(20px + var(--safe-bottom)) calc(24px + var(--safe-left));
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      .screen.active {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* ——— Shared UI ——— */
+      .brand {
+        font-size: clamp(2rem, 5vw, 3.2rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+      }
+
+      .brand span {
+        color: var(--accent);
+      }
+
+      .lede {
+        color: var(--text-muted);
+        font-size: clamp(0.95rem, 1.6vw, 1.15rem);
+        line-height: 1.5;
+        max-width: 42rem;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-height: var(--touch-min);
+        padding: 0.85rem 1.6rem;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 1.1rem;
+        transition:
+          transform 0.12s ease,
+          opacity 0.12s ease,
+          background 0.12s ease;
+      }
+
+      .btn:active {
+        transform: scale(0.97);
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #04140a;
+      }
+
+      .btn-primary:active {
+        background: var(--accent-dim);
+      }
+
+      .btn-secondary {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+
+      .btn-ghost {
+        color: var(--text-muted);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        min-height: auto;
+        padding: 0.5rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+        border-radius: 8px;
+      }
+
+      .btn-danger {
+        background: rgba(239, 68, 68, 0.15);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+      }
+
+      .btn-lg {
+        min-height: 72px;
+        font-size: 1.35rem;
+        padding: 1rem 2.4rem;
+      }
+
+      .btn-block {
+        width: 100%;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+
+      .field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .field input {
+        min-height: var(--touch-min);
+        padding: 0.75rem 1rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        color: var(--text);
+        outline: none;
+        font-size: 1rem;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      .field input:focus {
+        border-color: var(--accent);
+      }
+
+      .hint {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+      }
+
+      .warn {
+        padding: 0.85rem 1rem;
+        border-radius: 12px;
+        background: rgba(234, 179, 8, 0.12);
+        border: 1px solid rgba(234, 179, 8, 0.35);
+        color: #fde68a;
+        font-size: 0.95rem;
+        line-height: 1.4;
+      }
+
+      .error-banner {
+        padding: 0.85rem 1rem;
+        border-radius: 12px;
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #fecaca;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        display: none;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+
+      .error-banner.visible {
+        display: flex;
+      }
+
+      .panel {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.25rem;
+      }
+
+      .device-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      .color-map-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: min(360px, 45vh);
+        overflow-y: auto;
+        margin-top: 0.85rem;
+      }
+
+      .color-map-row {
+        display: grid;
+        grid-template-columns: 1fr minmax(120px, 140px);
+        gap: 0.65rem;
+        align-items: center;
+        padding: 0.55rem 0.75rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        text-align: left;
+      }
+
+      .color-map-meta {
+        min-width: 0;
+      }
+
+      .color-map-name {
+        font-weight: 700;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .color-map-artist {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .color-map-row select {
+        min-height: 44px;
+        width: 100%;
+        padding: 0.4rem 0.55rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        color: var(--text);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .color-map-row select.mapped {
+        border-color: var(--accent);
+      }
+
+      .color-map-empty {
+        padding: 0.75rem 0.25rem;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+      }
+
+      .device-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: var(--touch-min);
+        padding: 0.65rem 1rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        text-align: left;
+        width: 100%;
+        font-weight: 600;
+      }
+
+      .device-item.selected {
+        border-color: var(--accent);
+        background: rgba(29, 185, 84, 0.12);
+      }
+
+      .device-item .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #52525b;
+        flex-shrink: 0;
+      }
+
+      .device-item.selected .dot,
+      .device-item.active .dot {
+        background: var(--accent);
+      }
+
+      .device-meta {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--text-muted);
+      }
+
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .row-between {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      /* ——— Setup ——— */
+      #screen-setup {
+        justify-content: center;
+        align-items: center;
+      }
+
+      .setup-card {
+        width: min(640px, 100%);
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+
+      .setup-card .brand {
+        margin-bottom: 0.25rem;
+      }
+
+      /* ——— Start ——— */
+      #screen-start {
+        position: relative;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+
+      #btn-open-setup {
+        position: absolute;
+        top: calc(12px + var(--safe-top));
+        right: calc(12px + var(--safe-right));
+        min-height: 44px;
+        padding: 0.55rem 0.9rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-decoration: none;
+      }
+
+      #btn-open-setup:active {
+        background: var(--surface);
+        color: var(--text);
+      }
+
+      .start-card {
+        width: min(720px, 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+      }
+
+      .rules {
+        text-align: left;
+        font-size: clamp(1rem, 1.8vw, 1.2rem);
+        line-height: 1.55;
+        color: var(--text);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.35rem 1.5rem;
+        width: 100%;
+      }
+
+      .rules-steps {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        margin: 0;
+        padding: 0;
+        counter-reset: step;
+      }
+
+      .rules-steps li {
+        display: grid;
+        grid-template-columns: 2rem 1fr;
+        gap: 0.75rem;
+        align-items: start;
+        counter-increment: step;
+      }
+
+      .rules-steps li::before {
+        content: counter(step);
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #04140a;
+        font-weight: 800;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      /* ——— Game ——— */
+      #screen-game {
+        padding: calc(12px + var(--safe-top)) calc(16px + var(--safe-right))
+          calc(12px + var(--safe-bottom)) calc(16px + var(--safe-left));
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      #screen-game.active {
+        display: flex;
+      }
+
+      .game-top {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+        min-height: 110px;
+      }
+
+      .player-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 1rem;
+        border-radius: var(--radius);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        transition:
+          box-shadow 0.25s ease,
+          border-color 0.25s ease,
+          background 0.25s ease;
+        min-height: 100px;
+      }
+
+      .player-panel.flash-up {
+        border-color: var(--accent);
+        background: rgba(29, 185, 84, 0.18);
+        box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.25);
+      }
+
+      .player-panel.flash-down {
+        border-color: var(--danger);
+        background: rgba(239, 68, 68, 0.18);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+      }
+
+      .player-panel.p1 {
+        transform: rotate(180deg);
+      }
+
+      .player-name {
+        font-size: 0.95rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+      }
+
+      .player-score {
+        font-size: clamp(2.8rem, 8vw, 4.5rem);
+        font-weight: 800;
+        line-height: 1;
+        letter-spacing: -0.04em;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .center-status {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        text-align: center;
+        min-width: 180px;
+      }
+
+      .round-label {
+        font-size: clamp(1rem, 2vw, 1.25rem);
+        font-weight: 700;
+        color: var(--text-muted);
+      }
+
+      .status-label {
+        font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+        font-weight: 800;
+        min-height: 1.4em;
+      }
+
+      .playing-indicator {
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .playing-indicator.visible {
+        display: inline-flex;
+      }
+
+      .eq {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 18px;
+      }
+
+      .eq span {
+        width: 4px;
+        background: var(--accent);
+        border-radius: 2px;
+        animation: eq 0.9s ease-in-out infinite;
+      }
+
+      .eq span:nth-child(1) {
+        height: 6px;
+        animation-delay: 0s;
+      }
+      .eq span:nth-child(2) {
+        height: 14px;
+        animation-delay: 0.15s;
+      }
+      .eq span:nth-child(3) {
+        height: 9px;
+        animation-delay: 0.3s;
+      }
+      .eq span:nth-child(4) {
+        height: 16px;
+        animation-delay: 0.1s;
+      }
+
+      @keyframes eq {
+        0%,
+        100% {
+          transform: scaleY(0.45);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+
+      .countdown-overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        z-index: 40;
+        backdrop-filter: blur(4px);
+      }
+
+      .countdown-overlay.visible {
+        display: flex;
+      }
+
+      .countdown-num {
+        font-size: clamp(6rem, 25vw, 12rem);
+        font-weight: 900;
+        line-height: 1;
+        animation: pop 0.45s ease;
+      }
+
+      @keyframes pop {
+        0% {
+          transform: scale(0.5);
+          opacity: 0;
+        }
+        60% {
+          transform: scale(1.08);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+
       .color-grid {
-        grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(5, 1fr);
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        grid-template-rows: repeat(2, 1fr);
+        gap: 12px;
+        min-height: 0;
       }
-      .player-panel.p1 { transform: none; }
-    }
-  </style>
-</head>
-<body>
-  <div id="app">
-    <!-- Setup -->
-    <section id="screen-setup" class="screen" aria-label="Setup">
-      <div class="setup-card">
-        <h1 class="brand">Färg<span>spelet</span></h1>
-        <p class="lede">Logga in, välj spellista och vilken Spotify Connect-enhet som ska spela upp ljudet. iPaden är bara fjärrkontroll.</p>
 
-        <div id="setup-error" class="error-banner" role="alert"></div>
+      .color-btn {
+        border-radius: 18px;
+        border: 3px solid rgba(255, 255, 255, 0.12);
+        min-height: 0;
+        position: relative;
+        box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.2);
+        transition:
+          transform 0.1s ease,
+          filter 0.15s ease,
+          opacity 0.15s ease;
+      }
 
-        <div class="panel" id="auth-panel">
-          <div class="row-between">
-            <div>
-              <strong id="auth-status">Inte inloggad</strong>
-              <div class="hint" id="auth-hint">Kräver Spotify Premium</div>
+      .color-btn:active:not(:disabled) {
+        transform: scale(0.96);
+      }
+      .color-btn:disabled {
+        opacity: 0.35;
+        filter: grayscale(0.3);
+        pointer-events: none;
+      }
+
+      .color-btn[data-id="white"] {
+        border-color: rgba(0, 0, 0, 0.2);
+        box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.08);
+      }
+
+      .color-btn[data-id="black"] {
+        border-color: rgba(255, 255, 255, 0.25);
+      }
+
+      .game-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-shrink: 0;
+      }
+
+      .btn-end-game {
+        min-height: 44px;
+        padding: 0.5rem 0.9rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        border-radius: 10px;
+        border: 1px solid transparent;
+      }
+
+      .btn-end-game:active {
+        border-color: var(--border);
+        background: var(--surface);
+      }
+
+      #btn-next-round {
+        display: none;
+        margin-left: auto;
+      }
+
+      #btn-next-round.visible {
+        display: inline-flex;
+      }
+
+      #btn-skip-round {
+        display: none;
+        margin-left: auto;
+        min-width: 11rem;
+      }
+
+      #btn-skip-round.visible {
+        display: inline-flex;
+      }
+
+      #btn-skip-round:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      /* ——— Results ——— */
+      #screen-results {
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+
+      .results-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+        width: min(560px, 100%);
+      }
+
+      .winner-title {
+        font-size: clamp(2rem, 6vw, 3.5rem);
+        font-weight: 900;
+        letter-spacing: -0.03em;
+      }
+
+      .final-scores {
+        display: flex;
+        gap: 2rem;
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+
+      .final-scores strong {
+        display: block;
+        font-size: clamp(2.5rem, 8vw, 4rem);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ——— Modal ——— */
+      .modal-root {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: var(--overlay);
+        z-index: 50;
+        padding: 24px;
+        backdrop-filter: blur(6px);
+      }
+
+      .modal-root.visible {
+        display: flex;
+      }
+
+      .modal {
+        width: min(520px, 100%);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        text-align: center;
+        position: relative;
+      }
+
+      .modal-dismiss {
+        position: absolute;
+        top: 0.65rem;
+        right: 0.65rem;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text-muted);
+        font-size: 1.5rem;
+        font-weight: 700;
+        line-height: 1;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .modal-dismiss.visible {
+        display: inline-flex;
+      }
+
+      .modal-dismiss:active {
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .modal h2 {
+        font-size: clamp(1.4rem, 3vw, 1.85rem);
+        font-weight: 800;
+      }
+
+      .modal #modal-body {
+        margin-top: -0.5rem;
+        font-size: 1.05rem;
+        font-weight: 600;
+      }
+
+      .modal-color-preview {
+        width: 100%;
+        height: 72px;
+        border-radius: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .modal-track {
+        display: none;
+        flex-direction: column;
+        gap: 0.25rem;
+        padding: 1rem 1.1rem;
+        border-radius: 14px;
+        background: var(--surface);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        text-align: center;
+        min-height: 88px;
+        justify-content: center;
+      }
+
+      .modal-track.visible {
+        display: flex;
+      }
+
+      .modal-track-name {
+        font-size: clamp(1.15rem, 2.5vw, 1.45rem);
+        font-weight: 800;
+        line-height: 1.25;
+      }
+
+      .modal-track-artist {
+        font-size: 1rem;
+        font-weight: 600;
+        opacity: 0.85;
+      }
+
+      .modal-track.on-light .modal-track-name,
+      .modal-track.on-light .modal-track-artist {
+        color: #111;
+      }
+
+      .modal-track.on-dark .modal-track-name,
+      .modal-track.on-dark .modal-track-artist {
+        color: #fff;
+      }
+
+      .modal-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+
+      .modal-actions.single {
+        grid-template-columns: 1fr;
+      }
+
+      .modal-actions .btn {
+        min-height: 64px;
+        font-size: 1.15rem;
+      }
+
+      /* Landscape iPad-ish tweaks */
+      @media (max-height: 700px) {
+        .game-top {
+          min-height: 88px;
+        }
+        .player-panel {
+          min-height: 80px;
+          padding: 0.35rem 0.75rem;
+        }
+        .player-score {
+          font-size: clamp(2.2rem, 7vw, 3.5rem);
+        }
+        .color-grid {
+          gap: 8px;
+        }
+        .color-btn {
+          border-radius: 14px;
+        }
+      }
+
+      @media (orientation: portrait) {
+        .color-grid {
+          grid-template-columns: repeat(2, 1fr);
+          grid-template-rows: repeat(5, 1fr);
+        }
+        .player-panel.p1 {
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Setup -->
+      <section id="screen-setup" class="screen" aria-label="Setup">
+        <div class="setup-card">
+          <h1 class="brand">Färg<span>quiz</span></h1>
+          <p class="lede">
+            Logga in, välj spellista och vilken Spotify Connect-enhet som ska
+            spela upp ljudet. iPaden är bara fjärrkontroll.
+          </p>
+
+          <div id="setup-error" class="error-banner" role="alert"></div>
+
+          <div class="panel" id="auth-panel">
+            <div class="row-between">
+              <div>
+                <strong id="auth-status">Inte inloggad</strong>
+                <div class="hint" id="auth-hint">Kräver Spotify Premium</div>
+              </div>
+              <button type="button" class="btn btn-primary" id="btn-login">
+                Logga in med Spotify
+              </button>
             </div>
-            <button type="button" class="btn btn-primary" id="btn-login">Logga in med Spotify</button>
+          </div>
+
+          <div class="field">
+            <label for="playlist-input">Spellista (URL eller URI)</label>
+            <input
+              id="playlist-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://open.spotify.com/playlist/… eller spotify:playlist:…"
+            />
+            <p class="hint">
+              Måste vara en spellista du äger (eller är collaborator på). Andras
+              publika listor ger 403.
+            </p>
+          </div>
+
+          <div class="panel">
+            <div class="row-between" style="margin-bottom: 0.75rem">
+              <strong>Spotify Connect-enhet</strong>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="btn-refresh-devices"
+                style="
+                  min-height: 44px;
+                  padding: 0.5rem 1rem;
+                  font-size: 0.95rem;
+                "
+              >
+                Uppdatera
+              </button>
+            </div>
+            <div id="device-list" class="device-list">
+              <p class="hint">Logga in för att se enheter.</p>
+            </div>
+          </div>
+
+          <div class="panel" id="color-map-panel">
+            <div class="row-between" style="margin-bottom: 0.25rem">
+              <div>
+                <strong>Färgmappning</strong>
+                <div class="hint" id="color-map-progress">
+                  Valfritt – omappade låtar rättas manuellt under spelet.
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="btn-load-color-map"
+                style="
+                  min-height: 44px;
+                  padding: 0.5rem 1rem;
+                  font-size: 0.95rem;
+                "
+              >
+                Ladda låtar
+              </button>
+            </div>
+            <div id="color-map-list" class="color-map-list">
+              <p class="color-map-empty">
+                Ange spellista och ladda låtar för att mappa färger.
+              </p>
+            </div>
+          </div>
+
+          <div class="row" style="justify-content: flex-end">
+            <button
+              type="button"
+              class="btn btn-ghost"
+              id="btn-setup-cancel"
+              hidden
+            >
+              Avbryt
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-setup-save">
+              Spara &amp; fortsätt
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Start -->
+      <section id="screen-start" class="screen" aria-label="Start">
+        <button type="button" class="btn" id="btn-open-setup">
+          Inställningar
+        </button>
+        <div class="start-card">
+          <h1 class="brand">Färg<span>quiz</span></h1>
+          <div class="rules">
+            <ol class="rules-steps">
+              <li>En hemlig låt spelas – varje låt hör ihop med en färg.</li>
+              <li>
+                Slå först på rätt färgruta på bordet, tryck sedan samma färg på
+                skärmen.
+              </li>
+              <li>Rätt ger +1, fel ger −1. Bäst efter 10 rundor vinner!</li>
+            </ol>
+          </div>
+          <div id="start-warning" class="warn" hidden></div>
+          <div id="start-error" class="error-banner" role="alert"></div>
+          <button type="button" class="btn btn-primary btn-lg" id="btn-start">
+            Starta
+          </button>
+        </div>
+      </section>
+
+      <!-- Game -->
+      <section id="screen-game" class="screen" aria-label="Spel">
+        <div class="game-top">
+          <div class="player-panel p1" id="panel-p1">
+            <div class="player-name">Spelare 1</div>
+            <div class="player-score" id="score-p1">0</div>
+          </div>
+          <div class="center-status">
+            <div class="round-label" id="round-label">Runda 1 av 10</div>
+            <div class="status-label" id="status-label">Gör dig redo</div>
+            <div
+              class="playing-indicator"
+              id="playing-indicator"
+              aria-live="polite"
+            >
+              <span class="eq" aria-hidden="true"
+                ><span></span><span></span><span></span><span></span
+              ></span>
+              ♪ Låt spelas…
+            </div>
+          </div>
+          <div class="player-panel p2" id="panel-p2">
+            <div class="player-name">Spelare 2</div>
+            <div class="player-score" id="score-p2">0</div>
           </div>
         </div>
 
-        <div class="field">
-          <label for="playlist-input">Spellista (URL eller URI)</label>
-          <input id="playlist-input" type="text" inputmode="url" autocomplete="off" spellcheck="false"
-            placeholder="https://open.spotify.com/playlist/… eller spotify:playlist:…" />
+        <div id="game-error" class="error-banner" role="alert"></div>
+
+        <div class="color-grid" id="color-grid" aria-label="Färgknappar"></div>
+
+        <div class="game-bottom">
+          <button type="button" class="btn-end-game" id="btn-end-game">
+            Avsluta spelomgång
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-lg"
+            id="btn-skip-round"
+            disabled
+          >
+            Ingen visste
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-lg"
+            id="btn-next-round"
+          >
+            Nästa runda
+          </button>
         </div>
 
-        <div class="panel">
-          <div class="row-between" style="margin-bottom: 0.75rem;">
-            <strong>Spotify Connect-enhet</strong>
-            <button type="button" class="btn btn-secondary" id="btn-refresh-devices" style="min-height:44px;padding:0.5rem 1rem;font-size:0.95rem;">Uppdatera</button>
+        <div
+          class="countdown-overlay"
+          id="countdown-overlay"
+          aria-live="assertive"
+        >
+          <div class="countdown-num" id="countdown-num">3</div>
+        </div>
+      </section>
+
+      <!-- Results -->
+      <section id="screen-results" class="screen" aria-label="Resultat">
+        <div class="results-card">
+          <h1 class="brand">Färg<span>quiz</span></h1>
+          <div class="winner-title" id="winner-title">Oavgjort!</div>
+          <div class="final-scores">
+            <div>Spelare 1<strong id="final-p1">0</strong></div>
+            <div>Spelare 2<strong id="final-p2">0</strong></div>
           </div>
-          <div id="device-list" class="device-list">
-            <p class="hint">Logga in för att se enheter.</p>
-          </div>
+          <button
+            type="button"
+            class="btn btn-primary btn-lg"
+            id="btn-back-start"
+          >
+            Tillbaka till start
+          </button>
         </div>
-
-        <div class="row" style="justify-content:flex-end;">
-          <button type="button" class="btn btn-ghost" id="btn-setup-cancel" hidden>Avbryt</button>
-          <button type="button" class="btn btn-primary" id="btn-setup-save">Spara &amp; fortsätt</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Start -->
-    <section id="screen-start" class="screen" aria-label="Start">
-      <div class="start-card">
-        <h1 class="brand">Färg<span>spelet</span></h1>
-        <p class="rules">
-          Ni möts en mot en. En hemlig låt spelas – varje låt hör ihop med en färg.
-          Slå först på rätt färgruta på bordet och tryck sedan på färgen på skärmen.
-          Rätt färg ger +1 poäng, fel färg ger −1. Först till bäst efter 10 rundor vinner!
-        </p>
-        <div id="start-warning" class="warn" hidden></div>
-        <div id="start-error" class="error-banner" role="alert"></div>
-        <button type="button" class="btn btn-primary btn-lg" id="btn-start">Starta</button>
-        <button type="button" class="btn btn-ghost" id="btn-open-setup">Byt spellista / enhet</button>
-      </div>
-    </section>
-
-    <!-- Game -->
-    <section id="screen-game" class="screen" aria-label="Spel">
-      <div class="game-top">
-        <div class="player-panel p1" id="panel-p1">
-          <div class="player-name">Spelare 1</div>
-          <div class="player-score" id="score-p1">0</div>
-        </div>
-        <div class="center-status">
-          <div class="round-label" id="round-label">Runda 1 av 10</div>
-          <div class="status-label" id="status-label">Gör dig redo</div>
-          <div class="playing-indicator" id="playing-indicator" aria-live="polite">
-            <span class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-            ♪ Låt spelas…
-          </div>
-        </div>
-        <div class="player-panel p2" id="panel-p2">
-          <div class="player-name">Spelare 2</div>
-          <div class="player-score" id="score-p2">0</div>
-        </div>
-      </div>
-
-      <div id="game-error" class="error-banner" role="alert"></div>
-
-      <div class="color-grid" id="color-grid" aria-label="Färgknappar"></div>
-
-      <div class="game-bottom">
-        <button type="button" class="btn-end-game" id="btn-end-game">Avsluta spelomgång</button>
-        <button type="button" class="btn btn-primary btn-lg" id="btn-next-round">Nästa runda</button>
-      </div>
-
-      <div class="countdown-overlay" id="countdown-overlay" aria-live="assertive">
-        <div class="countdown-num" id="countdown-num">3</div>
-      </div>
-    </section>
-
-    <!-- Results -->
-    <section id="screen-results" class="screen" aria-label="Resultat">
-      <div class="results-card">
-        <h1 class="brand">Färg<span>spelet</span></h1>
-        <div class="winner-title" id="winner-title">Oavgjort!</div>
-        <div class="final-scores">
-          <div>Spelare 1<strong id="final-p1">0</strong></div>
-          <div>Spelare 2<strong id="final-p2">0</strong></div>
-        </div>
-        <button type="button" class="btn btn-primary btn-lg" id="btn-back-start">Tillbaka till start</button>
-      </div>
-    </section>
-  </div>
-
-  <div class="modal-root" id="modal-root" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <div class="modal">
-      <h2 id="modal-title"></h2>
-      <div id="modal-color-preview" class="modal-color-preview" hidden></div>
-      <div id="modal-body" class="hint"></div>
-      <div class="modal-actions" id="modal-actions"></div>
+      </section>
     </div>
-  </div>
-
-  <script>
-(function () {
-  "use strict";
-
-  // ═══════════════════════════════════════════════════════════
-  // KONFIG – ändra dessa vid behov
-  // ═══════════════════════════════════════════════════════════
-  const SPOTIFY_CLIENT_ID = "YOUR_SPOTIFY_CLIENT_ID";
-  const REDIRECT_URI = window.location.origin + window.location.pathname;
-
-  const TOTAL_ROUNDS = 10;
-
-  /** Färgknappar – id, label, CSS-färg. Ändra fritt. */
-  const COLORS = [
-    { id: "red",    label: "Röd",    hex: "#e11d48" },
-    { id: "blue",   label: "Blå",    hex: "#2563eb" },
-    { id: "green",  label: "Grön",   hex: "#16a34a" },
-    { id: "yellow", label: "Gul",    hex: "#eab308" },
-    { id: "orange", label: "Orange", hex: "#ea580c" },
-    { id: "purple", label: "Lila",   hex: "#7c3aed" },
-    { id: "pink",   label: "Rosa",   hex: "#ec4899" },
-    { id: "black",  label: "Svart",  hex: "#171717" },
-    { id: "white",  label: "Vit",    hex: "#f4f4f5" },
-    { id: "brown",  label: "Brun",   hex: "#92400e" },
-  ];
-
-  const SCOPES = [
-    "user-modify-playback-state",
-    "user-read-playback-state",
-  ].join(" ");
-
-  const STORAGE = {
-    settings: "fargspelet_settings",
-    verifier: "fargspelet_pkce_verifier",
-    tokens: "fargspelet_tokens",
-  };
-
-  const API = "https://api.spotify.com/v1";
-
-  // ═══════════════════════════════════════════════════════════
-  // State
-  // ═══════════════════════════════════════════════════════════
-  const state = {
-    accessToken: null,
-    refreshToken: null,
-    tokenExpiresAt: 0,
-    playlistId: null,
-    playlistUri: null,
-    deviceId: null,
-    deviceName: null,
-    trackUris: [],
-    scores: { 1: 0, 2: 0 },
-    round: 0,
-    playedTrackUris: [],
-    phase: "idle", // idle | countdown | playing | judging | between | finished
-    selectedColorId: null,
-    claimingPlayer: null,
-    roundBusy: false,
-  };
-
-  // ═══════════════════════════════════════════════════════════
-  // DOM
-  // ═══════════════════════════════════════════════════════════
-  const $ = (id) => document.getElementById(id);
-
-  const screens = {
-    setup: $("screen-setup"),
-    start: $("screen-start"),
-    game: $("screen-game"),
-    results: $("screen-results"),
-  };
-
-  // ═══════════════════════════════════════════════════════════
-  // Utils
-  // ═══════════════════════════════════════════════════════════
-  function showScreen(name) {
-    Object.entries(screens).forEach(([key, el]) => {
-      el.classList.toggle("active", key === name);
-    });
-  }
-
-  function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-
-  function base64UrlEncode(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let str = "";
-    for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
-    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-
-  function randomString(length) {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-    const values = crypto.getRandomValues(new Uint8Array(length));
-    return Array.from(values, (v) => chars[v % chars.length]).join("");
-  }
-
-  async function sha256(plain) {
-    const data = new TextEncoder().encode(plain);
-    return crypto.subtle.digest("SHA-256", data);
-  }
-
-  function parsePlaylistId(input) {
-    const raw = (input || "").trim();
-    if (!raw) return null;
-    let m = raw.match(/spotify:playlist:([a-zA-Z0-9]+)/);
-    if (m) return m[1];
-    m = raw.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
-    if (m) return m[1];
-    if (/^[a-zA-Z0-9]{22}$/.test(raw)) return raw;
-    return null;
-  }
-
-  function loadSettings() {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE.settings) || "{}");
-    } catch {
-      return {};
-    }
-  }
-
-  function saveSettings(partial) {
-    const next = { ...loadSettings(), ...partial };
-    localStorage.setItem(STORAGE.settings, JSON.stringify(next));
-    return next;
-  }
-
-  function saveTokensToSession() {
-    if (!state.accessToken) {
-      sessionStorage.removeItem(STORAGE.tokens);
-      return;
-    }
-    sessionStorage.setItem(
-      STORAGE.tokens,
-      JSON.stringify({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
-        tokenExpiresAt: state.tokenExpiresAt,
-      })
-    );
-  }
-
-  function loadTokensFromSession() {
-    try {
-      const raw = sessionStorage.getItem(STORAGE.tokens);
-      if (!raw) return false;
-      const t = JSON.parse(raw);
-      state.accessToken = t.accessToken || null;
-      state.refreshToken = t.refreshToken || null;
-      state.tokenExpiresAt = t.tokenExpiresAt || 0;
-      return !!state.accessToken;
-    } catch {
-      return false;
-    }
-  }
-
-  function clearAuth() {
-    state.accessToken = null;
-    state.refreshToken = null;
-    state.tokenExpiresAt = 0;
-    sessionStorage.removeItem(STORAGE.tokens);
-    sessionStorage.removeItem(STORAGE.verifier);
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Modal
-  // ═══════════════════════════════════════════════════════════
-  function closeModal() {
-    $("modal-root").classList.remove("visible");
-    $("modal-actions").innerHTML = "";
-    $("modal-color-preview").hidden = true;
-  }
-
-  function showModal({ title, body = "", colorHex = null, buttons }) {
-    return new Promise((resolve) => {
-      $("modal-title").textContent = title;
-      $("modal-body").textContent = body || "";
-      $("modal-body").style.display = body ? "block" : "none";
-
-      const preview = $("modal-color-preview");
-      if (colorHex) {
-        preview.style.background = colorHex;
-        preview.hidden = false;
-      } else {
-        preview.hidden = true;
-      }
-
-      const actions = $("modal-actions");
-      actions.innerHTML = "";
-      actions.className = "modal-actions" + (buttons.length === 1 ? " single" : "");
-
-      buttons.forEach((b) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn " + (b.className || "btn-secondary");
-        btn.textContent = b.label;
-        btn.addEventListener("click", () => {
-          closeModal();
-          resolve(b.value);
-        });
-        actions.appendChild(btn);
-      });
-
-      $("modal-root").classList.add("visible");
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Spotify Auth (PKCE)
-  // ═══════════════════════════════════════════════════════════
-  async function beginLogin() {
-    if (!SPOTIFY_CLIENT_ID || SPOTIFY_CLIENT_ID === "YOUR_SPOTIFY_CLIENT_ID") {
-      showSetupError("Sätt SPOTIFY_CLIENT_ID överst i index.html (Spotify Developer Dashboard).");
-      return;
-    }
-    const verifier = randomString(64);
-    sessionStorage.setItem(STORAGE.verifier, verifier);
-    const challenge = base64UrlEncode(await sha256(verifier));
-
-    const params = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
-      response_type: "code",
-      redirect_uri: REDIRECT_URI,
-      scope: SCOPES,
-      code_challenge_method: "S256",
-      code_challenge: challenge,
-      show_dialog: "false",
-    });
-
-    window.location.href = "https://accounts.spotify.com/authorize?" + params.toString();
-  }
-
-  async function exchangeCode(code) {
-    const verifier = sessionStorage.getItem(STORAGE.verifier);
-    if (!verifier) throw new Error("Saknar PKCE-verifier. Försök logga in igen.");
-
-    const body = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: verifier,
-    });
-
-    const res = await fetch("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error_description || data.error || "Token-utbyte misslyckades");
-    }
-
-    applyTokenResponse(data);
-    sessionStorage.removeItem(STORAGE.verifier);
-  }
-
-  function applyTokenResponse(data) {
-    state.accessToken = data.access_token;
-    if (data.refresh_token) state.refreshToken = data.refresh_token;
-    state.tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000 - 60_000;
-    saveTokensToSession();
-  }
-
-  async function ensureToken() {
-    if (!state.accessToken) throw new AuthError("Inte inloggad");
-    if (Date.now() < state.tokenExpiresAt) return state.accessToken;
-
-    if (!state.refreshToken) throw new AuthError("Sessionen har gått ut. Logga in igen.");
-
-    const body = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
-      grant_type: "refresh_token",
-      refresh_token: state.refreshToken,
-    });
-
-    const res = await fetch("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      clearAuth();
-      throw new AuthError(data.error_description || "Kunde inte förnya token. Logga in igen.");
-    }
-
-    applyTokenResponse(data);
-    return state.accessToken;
-  }
-
-  function AuthError(message) {
-    this.name = "AuthError";
-    this.message = message;
-  }
-  AuthError.prototype = Object.create(Error.prototype);
-
-  function DeviceError(message) {
-    this.name = "DeviceError";
-    this.message = message;
-  }
-  DeviceError.prototype = Object.create(Error.prototype);
-
-  // ═══════════════════════════════════════════════════════════
-  // Spotify API
-  // ═══════════════════════════════════════════════════════════
-  async function spotifyFetch(path, options = {}) {
-    const token = await ensureToken();
-    const res = await fetch(API + path, {
-      ...options,
-      headers: {
-        Authorization: "Bearer " + token,
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(options.headers || {}),
-      },
-    });
-
-    if (res.status === 204) return null;
-
-    let data = null;
-    const text = await res.text();
-    if (text) {
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-    }
-
-    if (res.status === 401) {
-      // One retry after forced refresh
-      if (!options._retried && state.refreshToken) {
-        state.tokenExpiresAt = 0;
-        return spotifyFetch(path, { ...options, _retried: true });
-      }
-      clearAuth();
-      throw new AuthError("Sessionen har gått ut. Logga in igen.");
-    }
-
-    if (!res.ok) {
-      const msg =
-        (data && (data.error?.message || data.error_description || data.error)) ||
-        ("Spotify-fel " + res.status);
-
-      if (
-        res.status === 404 ||
-        /NO_ACTIVE_DEVICE|no active device|Device not found/i.test(String(msg))
-      ) {
-        throw new DeviceError(
-          "Ingen aktiv Spotify Connect-enhet. Öppna Spotify på högtalarenheten och välj den här."
-        );
-      }
-      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
-    }
-
-    return data;
-  }
-
-  async function fetchDevices() {
-    const data = await spotifyFetch("/me/player/devices");
-    return (data && data.devices) || [];
-  }
-
-  function toApiPath(urlOrPath) {
-    if (!urlOrPath) return null;
-    return urlOrPath.replace(/^https:\/\/api\.spotify\.com\/v1/, "");
-  }
-
-  async function fetchAllPlaylistTracks(playlistId) {
-    const uris = [];
-    let path =
-      "/playlists/" +
-      encodeURIComponent(playlistId) +
-      "/tracks?limit=100&fields=items(track(uri,type)),next";
-
-    while (path) {
-      const data = await spotifyFetch(path);
-      const items = (data && data.items) || [];
-      for (const item of items) {
-        const t = item && item.track;
-        if (t && t.type === "track" && t.uri) uris.push(t.uri);
-      }
-      path = toApiPath(data && data.next);
-    }
-
-    return uris;
-  }
-
-  async function transferPlayback(deviceId, play) {
-    await spotifyFetch("/me/player", {
-      method: "PUT",
-      body: JSON.stringify({ device_ids: [deviceId], play: !!play }),
-    });
-  }
-
-  async function playUris(uris, deviceId) {
-    const qs = deviceId ? ("?device_id=" + encodeURIComponent(deviceId)) : "";
-    try {
-      await spotifyFetch("/me/player/play" + qs, {
-        method: "PUT",
-        body: JSON.stringify({ uris }),
-      });
-    } catch (err) {
-      if (err instanceof DeviceError && deviceId) {
-        await transferPlayback(deviceId, false);
-        await sleep(400);
-        await spotifyFetch("/me/player/play?device_id=" + encodeURIComponent(deviceId), {
-          method: "PUT",
-          body: JSON.stringify({ uris }),
-        });
-        return;
-      }
-      throw err;
-    }
-  }
-
-  async function pausePlayback(deviceId) {
-    const qs = deviceId ? ("?device_id=" + encodeURIComponent(deviceId)) : "";
-    try {
-      await spotifyFetch("/me/player/pause" + qs, { method: "PUT" });
-    } catch (err) {
-      // Pausfel ska inte krascha rundan – låten kanske redan pausats
-      console.warn("Pause failed:", err);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // UI helpers
-  // ═══════════════════════════════════════════════════════════
-  function showBanner(el, message, actions) {
-    el.innerHTML = "";
-    const span = document.createElement("span");
-    span.textContent = message;
-    el.appendChild(span);
-
-    if (actions && actions.length) {
-      const wrap = document.createElement("div");
-      wrap.className = "row";
-      actions.forEach((a) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn btn-secondary";
-        btn.style.minHeight = "40px";
-        btn.style.padding = "0.4rem 0.9rem";
-        btn.style.fontSize = "0.9rem";
-        btn.textContent = a.label;
-        btn.addEventListener("click", a.onClick);
-        wrap.appendChild(btn);
-      });
-      el.appendChild(wrap);
-    }
-
-    el.classList.add("visible");
-  }
-
-  function hideBanner(el) {
-    el.classList.remove("visible");
-    el.innerHTML = "";
-  }
-
-  function showSetupError(msg) {
-    showBanner($("setup-error"), msg, [
-      { label: "Logga in", onClick: () => beginLogin() },
-    ]);
-  }
-
-  function updateAuthUI() {
-    const loggedIn = !!state.accessToken;
-    $("auth-status").textContent = loggedIn ? "Inloggad" : "Inte inloggad";
-    $("auth-hint").textContent = loggedIn
-      ? "Token förnyas automatiskt under festen"
-      : "Kräver Spotify Premium";
-    $("btn-login").textContent = loggedIn ? "Logga in igen" : "Logga in med Spotify";
-  }
-
-  function renderDevices(devices, selectedId) {
-    const list = $("device-list");
-    list.innerHTML = "";
-
-    if (!devices.length) {
-      const p = document.createElement("p");
-      p.className = "hint";
-      p.textContent =
-        "Inga enheter hittades. Öppna Spotify-appen på telefonen/datorn som ska spela ljud, spela en låt kort, och tryck Uppdatera.";
-      list.appendChild(p);
-      return;
-    }
-
-    devices.forEach((d) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "device-item";
-      if (d.id === selectedId) btn.classList.add("selected");
-      if (d.is_active) btn.classList.add("active");
-
-      btn.innerHTML =
-        '<span class="dot"></span><span><div>' +
-        escapeHtml(d.name) +
-        '</div><div class="device-meta">' +
-        escapeHtml(d.type || "Enhet") +
-        (d.is_active ? " · aktiv" : "") +
-        (d.is_restricted ? " · begränsad" : "") +
-        "</div></span>";
-
-      btn.addEventListener("click", () => {
-        state.deviceId = d.id;
-        state.deviceName = d.name;
-        saveSettings({ deviceId: d.id, deviceName: d.name });
-        renderDevices(devices, d.id);
-      });
-
-      list.appendChild(btn);
-    });
-  }
-
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function buildColorGrid() {
-    const grid = $("color-grid");
-    grid.innerHTML = "";
-    COLORS.forEach((c) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "color-btn";
-      btn.dataset.id = c.id;
-      btn.style.background = c.hex;
-      btn.setAttribute("aria-label", c.label);
-      btn.disabled = true;
-      btn.addEventListener("click", () => onColorPressed(c.id));
-      grid.appendChild(btn);
-    });
-  }
-
-  function setColorsEnabled(enabled) {
-    $("color-grid").querySelectorAll(".color-btn").forEach((btn) => {
-      btn.disabled = !enabled;
-    });
-  }
-
-  function updateScoresUI() {
-    $("score-p1").textContent = String(state.scores[1]);
-    $("score-p2").textContent = String(state.scores[2]);
-  }
-
-  function flashScore(player, delta) {
-    const panel = $(player === 1 ? "panel-p1" : "panel-p2");
-    panel.classList.remove("flash-up", "flash-down");
-    void panel.offsetWidth;
-    panel.classList.add(delta > 0 ? "flash-up" : "flash-down");
-    setTimeout(() => panel.classList.remove("flash-up", "flash-down"), 900);
-  }
-
-  function setStatus(text) {
-    $("status-label").textContent = text || "";
-  }
-
-  function setPlayingVisible(visible) {
-    $("playing-indicator").classList.toggle("visible", !!visible);
-  }
-
-  function setNextRoundVisible(visible) {
-    $("btn-next-round").classList.toggle("visible", !!visible);
-  }
-
-  function updateRoundLabel() {
-    $("round-label").textContent =
-      "Runda " + Math.min(state.round, TOTAL_ROUNDS) + " av " + TOTAL_ROUNDS;
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Game flow
-  // ═══════════════════════════════════════════════════════════
-  function resetGameState() {
-    state.scores = { 1: 0, 2: 0 };
-    state.round = 0;
-    state.playedTrackUris = [];
-    state.phase = "idle";
-    state.selectedColorId = null;
-    state.claimingPlayer = null;
-    state.roundBusy = false;
-  }
-
-  async function handleApiError(err, bannerEl) {
-    console.error(err);
-    if (err instanceof AuthError) {
-      showBanner(bannerEl, err.message, [
-        { label: "Logga in", onClick: () => { hideBanner(bannerEl); openSetup(true); } },
-      ]);
-      return;
-    }
-    if (err instanceof DeviceError) {
-      showBanner(bannerEl, err.message, [
-        {
-          label: "Välj enhet",
-          onClick: () => { hideBanner(bannerEl); openSetup(true); },
-        },
-      ]);
-      return;
-    }
-    showBanner(bannerEl, err.message || "Något gick fel", [
-      {
-        label: "Öppna setup",
-        onClick: () => { hideBanner(bannerEl); openSetup(true); },
-      },
-    ]);
-  }
-
-  async function startGame() {
-    hideBanner($("start-error"));
-    $("start-warning").hidden = true;
-
-    if (!state.accessToken) {
-      openSetup(false);
-      return;
-    }
-    if (!state.playlistId || !state.deviceId) {
-      openSetup(false);
-      return;
-    }
-
-    try {
-      $("btn-start").disabled = true;
-      setStatus("Laddar spellista…");
-      state.trackUris = await fetchAllPlaylistTracks(state.playlistId);
-
-      if (state.trackUris.length < TOTAL_ROUNDS) {
-        $("start-warning").hidden = false;
-        $("start-warning").textContent =
-          "Spellistan har bara " +
-          state.trackUris.length +
-          " låtar. Spelet kräver " +
-          TOTAL_ROUNDS +
-          ". Lägg till fler eller byt spellista.";
-        $("btn-start").disabled = false;
-        return;
-      }
-
-      resetGameState();
-      updateScoresUI();
-      setNextRoundVisible(false);
-      setPlayingVisible(false);
-      setColorsEnabled(false);
-      hideBanner($("game-error"));
-      showScreen("game");
-      await beginRound();
-    } catch (err) {
-      await handleApiError(err, $("start-error"));
-    } finally {
-      $("btn-start").disabled = false;
-    }
-  }
-
-  async function beginRound() {
-    if (state.roundBusy) return;
-    state.roundBusy = true;
-    state.round += 1;
-    state.selectedColorId = null;
-    state.claimingPlayer = null;
-    state.phase = "countdown";
-
-    updateRoundLabel();
-    setNextRoundVisible(false);
-    setPlayingVisible(false);
-    setColorsEnabled(false);
-    setStatus("Nedräkning…");
-    hideBanner($("game-error"));
-
-    // Countdown 3-2-1
-    const overlay = $("countdown-overlay");
-    const numEl = $("countdown-num");
-    overlay.classList.add("visible");
-
-    for (const n of [3, 2, 1]) {
-      numEl.textContent = String(n);
-      numEl.style.animation = "none";
-      void numEl.offsetWidth;
-      numEl.style.animation = "";
-      await sleep(850);
-    }
-
-    overlay.classList.remove("visible");
-
-    // Pick unused track
-    const remaining = state.trackUris.filter((u) => !state.playedTrackUris.includes(u));
-    if (!remaining.length) {
-      state.roundBusy = false;
-      finishGame();
-      return;
-    }
-    const trackUri = remaining[Math.floor(Math.random() * remaining.length)];
-    state.playedTrackUris.push(trackUri);
-
-    try {
-      await playUris([trackUri], state.deviceId);
-      state.phase = "playing";
-      setStatus("");
-      setPlayingVisible(true);
-      setColorsEnabled(true);
-      state.roundBusy = false;
-    } catch (err) {
-      state.phase = "idle";
-      state.roundBusy = false;
-      // Undo round increment? Keep round number but allow retry via next / setup
-      setPlayingVisible(false);
-      setColorsEnabled(false);
-      setStatus("Kunde inte spela");
-      // Put track back so it can be retried
-      state.playedTrackUris = state.playedTrackUris.filter((u) => u !== trackUri);
-      state.round -= 1;
-      updateRoundLabel();
-      await handleApiError(err, $("game-error"));
-      setNextRoundVisible(true);
-      $("btn-next-round").textContent =
-        state.round === 0 ? "Försök igen" : "Försök igen";
-    }
-  }
-
-  async function onColorPressed(colorId) {
-    if (state.phase !== "playing" || state.roundBusy) return;
-    state.roundBusy = true;
-    state.phase = "judging";
-    state.selectedColorId = colorId;
-    setColorsEnabled(false);
-    setPlayingVisible(false);
-    setStatus("Pausar…");
-
-    await pausePlayback(state.deviceId);
-
-    const color = COLORS.find((c) => c.id === colorId);
-
-    const player = await showModal({
-      title: "Vem slog först?",
-      buttons: [
-        { label: "Spelare 1", value: 1, className: "btn-secondary" },
-        { label: "Spelare 2", value: 2, className: "btn-secondary" },
-      ],
-    });
-
-    state.claimingPlayer = player;
-
-    const correct = await showModal({
-      title: "Var det rätt färg?",
-      body: color ? color.label : "",
-      colorHex: color ? color.hex : null,
-      buttons: [
-        { label: "Rätt ✓", value: true, className: "btn-primary" },
-        { label: "Fel ✗", value: false, className: "btn-danger" },
-      ],
-    });
-
-    const delta = correct ? 1 : -1;
-    state.scores[player] += delta;
-    updateScoresUI();
-    flashScore(player, delta);
-
-    setStatus(
-      (correct ? "Rätt! " : "Fel! ") +
-        (delta > 0 ? "+1" : "−1") +
-        " till Spelare " +
-        player
-    );
-
-    state.phase = "between";
-    state.roundBusy = false;
-
-    if (state.round >= TOTAL_ROUNDS) {
-      await sleep(900);
-      finishGame();
-    } else {
-      $("btn-next-round").textContent = "Nästa runda";
-      setNextRoundVisible(true);
-    }
-  }
-
-  function finishGame() {
-    state.phase = "finished";
-    setColorsEnabled(false);
-    setPlayingVisible(false);
-    setNextRoundVisible(false);
-    pausePlayback(state.deviceId);
-
-    $("final-p1").textContent = String(state.scores[1]);
-    $("final-p2").textContent = String(state.scores[2]);
-
-    if (state.scores[1] > state.scores[2]) {
-      $("winner-title").textContent = "Spelare 1 vinner!";
-    } else if (state.scores[2] > state.scores[1]) {
-      $("winner-title").textContent = "Spelare 2 vinner!";
-    } else {
-      $("winner-title").textContent = "Oavgjort!";
-    }
-
-    showScreen("results");
-  }
-
-  async function endGameConfirm() {
-    const ok = await showModal({
-      title: "Avsluta spelomgång?",
-      body: "Poängen nollställs. Musiken pausas.",
-      buttons: [
-        { label: "Fortsätt spela", value: false, className: "btn-secondary" },
-        { label: "Avsluta", value: true, className: "btn-danger" },
-      ],
-    });
-    if (!ok) return;
-    await pausePlayback(state.deviceId);
-    state.phase = "idle";
-    setColorsEnabled(false);
-    setPlayingVisible(false);
-    setNextRoundVisible(false);
-    showScreen("start");
-    refreshStartWarnings();
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Setup / navigation
-  // ═══════════════════════════════════════════════════════════
-  let setupReturnScreen = "start";
-
-  function openSetup(fromGame) {
-    setupReturnScreen = fromGame ? "game" : "start";
-    const canCancel =
-      fromGame || !!(state.accessToken && state.playlistId && state.deviceId);
-    $("btn-setup-cancel").hidden = !canCancel;
-
-    const settings = loadSettings();
-    if (settings.playlistInput) $("playlist-input").value = settings.playlistInput;
-    hideBanner($("setup-error"));
-    updateAuthUI();
-    showScreen("setup");
-
-    if (state.accessToken) {
-      refreshDeviceList().catch((err) => handleApiError(err, $("setup-error")));
-    }
-  }
-
-  async function refreshDeviceList() {
-    const devices = await fetchDevices();
-    const selected = state.deviceId || loadSettings().deviceId || null;
-    if (selected && devices.some((d) => d.id === selected)) {
-      state.deviceId = selected;
-    }
-    renderDevices(devices, state.deviceId);
-  }
-
-  async function saveSetup() {
-    hideBanner($("setup-error"));
-
-    if (!state.accessToken) {
-      showSetupError("Logga in med Spotify först.");
-      return;
-    }
-
-    const input = $("playlist-input").value;
-    const playlistId = parsePlaylistId(input);
-    if (!playlistId) {
-      showSetupError("Klistra in en giltig Spotify-spellista (URL eller URI).");
-      return;
-    }
-
-    if (!state.deviceId) {
-      showSetupError("Välj vilken Spotify Connect-enhet som ska spela ljudet.");
-      return;
-    }
-
-    try {
-      $("btn-setup-save").disabled = true;
-      // Validate playlist is reachable
-      const tracks = await fetchAllPlaylistTracks(playlistId);
-      state.playlistId = playlistId;
-      state.playlistUri = "spotify:playlist:" + playlistId;
-      state.trackUris = tracks;
-
-      saveSettings({
-        playlistInput: input.trim(),
-        playlistId,
-        deviceId: state.deviceId,
-        deviceName: state.deviceName,
-      });
-
-      // Soft-transfer so device is ready
-      try {
-        await transferPlayback(state.deviceId, false);
-      } catch (e) {
-        console.warn("Transfer warning:", e);
-      }
-
-      refreshStartWarnings();
-      showScreen("start");
-    } catch (err) {
-      await handleApiError(err, $("setup-error"));
-    } finally {
-      $("btn-setup-save").disabled = false;
-    }
-  }
-
-  function refreshStartWarnings() {
-    const warn = $("start-warning");
-    if (state.trackUris.length && state.trackUris.length < TOTAL_ROUNDS) {
-      warn.hidden = false;
-      warn.textContent =
-        "Spellistan har bara " +
-        state.trackUris.length +
-        " låtar (behöver minst " +
-        TOTAL_ROUNDS +
-        ").";
-    } else {
-      warn.hidden = true;
-    }
-  }
-
-  function applySavedSettings() {
-    const s = loadSettings();
-    if (s.playlistId) {
-      state.playlistId = s.playlistId;
-      state.playlistUri = "spotify:playlist:" + s.playlistId;
-    }
-    if (s.playlistInput) $("playlist-input").value = s.playlistInput;
-    if (s.deviceId) {
-      state.deviceId = s.deviceId;
-      state.deviceName = s.deviceName || null;
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // Boot
-  // ═══════════════════════════════════════════════════════════
-  async function handleRedirectIfNeeded() {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const error = params.get("error");
-
-    if (error) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      showSetupError("Inloggning avbröts: " + error);
-      return "error";
-    }
-
-    if (code) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      try {
-        await exchangeCode(code);
-        return "ok";
-      } catch (err) {
-        showSetupError(err.message || "Inloggning misslyckades");
-        return "error";
-      }
-    }
-    return "none";
-  }
-
-  function wireEvents() {
-    $("btn-login").addEventListener("click", () => beginLogin());
-    $("btn-refresh-devices").addEventListener("click", async () => {
-      try {
-        hideBanner($("setup-error"));
-        await refreshDeviceList();
-      } catch (err) {
-        await handleApiError(err, $("setup-error"));
-      }
-    });
-    $("btn-setup-save").addEventListener("click", () => saveSetup());
-    $("btn-setup-cancel").addEventListener("click", () => {
-      showScreen(setupReturnScreen);
-    });
-    $("btn-open-setup").addEventListener("click", () => openSetup(false));
-    $("btn-start").addEventListener("click", () => startGame());
-    $("btn-next-round").addEventListener("click", () => beginRound());
-    $("btn-end-game").addEventListener("click", () => endGameConfirm());
-    $("btn-back-start").addEventListener("click", () => {
-      showScreen("start");
-      refreshStartWarnings();
-    });
-
-    // Prevent accidental pinch-zoom gestures disrupting play on older iOS
-    document.addEventListener(
-      "gesturestart",
-      (e) => e.preventDefault(),
-      { passive: false }
-    );
-  }
-
-  async function boot() {
-    buildColorGrid();
-    wireEvents();
-    applySavedSettings();
-    loadTokensFromSession();
-
-    const redirect = await handleRedirectIfNeeded();
-    updateAuthUI();
-
-    const ready =
-      state.accessToken && state.playlistId && state.deviceId;
-
-    if (redirect === "ok") {
-      openSetup(false);
-      try {
-        await refreshDeviceList();
-      } catch (err) {
-        await handleApiError(err, $("setup-error"));
-      }
-      return;
-    }
-
-    if (ready) {
-      showScreen("start");
-      // Prefetch tracks in background for warning
-      fetchAllPlaylistTracks(state.playlistId)
-        .then((uris) => {
-          state.trackUris = uris;
+
+    <div
+      class="modal-root"
+      id="modal-root"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      <div class="modal">
+        <button
+          type="button"
+          class="modal-dismiss"
+          id="modal-dismiss"
+          aria-label="Ångra och gå tillbaka"
+          hidden
+        >
+          ×
+        </button>
+        <h2 id="modal-title"></h2>
+        <div id="modal-body" class="hint"></div>
+        <div id="modal-track" class="modal-track" hidden>
+          <div class="modal-track-name" id="modal-track-name"></div>
+          <div class="modal-track-artist" id="modal-track-artist"></div>
+        </div>
+        <div id="modal-color-preview" class="modal-color-preview" hidden></div>
+        <div class="modal-actions" id="modal-actions"></div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        // ═══════════════════════════════════════════════════════════
+        // KONFIG – ändra dessa vid behov
+        // ═══════════════════════════════════════════════════════════
+        const SPOTIFY_CLIENT_ID = "6ee2da17e35c4c5e8cdcf1b23d2d7749";
+        const REDIRECT_URI = window.location.origin + window.location.pathname;
+
+        const TOTAL_ROUNDS = 10;
+        /** Sekunder innan "Ingen visste" kan tryckas under en runda. */
+        const SKIP_UNLOCK_SECONDS = 15;
+
+        /** Färgknappar – id, label, CSS-färg. Ändra fritt. */
+        const COLORS = [
+          { id: "red", label: "Röd", hex: "#e11d48" },
+          { id: "blue", label: "Blå", hex: "#2563eb" },
+          { id: "green", label: "Grön", hex: "#16a34a" },
+          { id: "yellow", label: "Gul", hex: "#eab308" },
+          { id: "orange", label: "Orange", hex: "#ea580c" },
+          { id: "purple", label: "Lila", hex: "#7c3aed" },
+          { id: "pink", label: "Rosa", hex: "#ec4899" },
+          { id: "black", label: "Svart", hex: "#171717" },
+          { id: "white", label: "Vit", hex: "#f4f4f5" },
+          { id: "brown", label: "Brun", hex: "#92400e" },
+        ];
+
+        const SCOPES = [
+          "user-modify-playback-state",
+          "user-read-playback-state",
+          "playlist-read-private",
+          "playlist-read-collaborative",
+        ].join(" ");
+
+        const STORAGE = {
+          settings: "fargspelet_settings",
+          colorMaps: "fargspelet_color_maps",
+          verifier: "fargspelet_pkce_verifier",
+          tokens: "fargspelet_tokens",
+        };
+
+        const API = "https://api.spotify.com/v1";
+
+        // ═══════════════════════════════════════════════════════════
+        // State
+        // ═══════════════════════════════════════════════════════════
+        const state = {
+          accessToken: null,
+          refreshToken: null,
+          tokenExpiresAt: 0,
+          playlistId: null,
+          playlistUri: null,
+          deviceId: null,
+          deviceName: null,
+          trackUris: [],
+          playlistTracks: [],
+          colorMap: {},
+          scores: { 1: 0, 2: 0 },
+          round: 0,
+          playedTrackUris: [],
+          currentTrackUri: null,
+          phase: "idle", // idle | countdown | playing | judging | between | finished
+          selectedColorId: null,
+          claimingPlayer: null,
+          roundBusy: false,
+        };
+
+        // ═══════════════════════════════════════════════════════════
+        // DOM
+        // ═══════════════════════════════════════════════════════════
+        const $ = (id) => document.getElementById(id);
+
+        const screens = {
+          setup: $("screen-setup"),
+          start: $("screen-start"),
+          game: $("screen-game"),
+          results: $("screen-results"),
+        };
+
+        // ═══════════════════════════════════════════════════════════
+        // Utils
+        // ═══════════════════════════════════════════════════════════
+        function showScreen(name) {
+          Object.entries(screens).forEach(([key, el]) => {
+            el.classList.toggle("active", key === name);
+          });
+        }
+
+        function sleep(ms) {
+          return new Promise((r) => setTimeout(r, ms));
+        }
+
+        function base64UrlEncode(buffer) {
+          const bytes = new Uint8Array(buffer);
+          let str = "";
+          for (let i = 0; i < bytes.length; i++)
+            str += String.fromCharCode(bytes[i]);
+          return btoa(str)
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+        }
+
+        function randomString(length) {
+          const chars =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+          const values = crypto.getRandomValues(new Uint8Array(length));
+          return Array.from(values, (v) => chars[v % chars.length]).join("");
+        }
+
+        /** SHA-256 with SubtleCrypto when available; pure JS fallback for http://LAN-IP (no secure context). */
+        async function sha256(plain) {
+          const data = new TextEncoder().encode(plain);
+          if (globalThis.crypto && crypto.subtle && crypto.subtle.digest) {
+            return crypto.subtle.digest("SHA-256", data);
+          }
+          return sha256Fallback(data).buffer;
+        }
+
+        function sha256Fallback(bytes) {
+          // Minimal SHA-256 (public domain style) for PKCE on non-HTTPS LAN hosts
+          const K = new Uint32Array([
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+          ]);
+          const H = new Uint32Array([
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+          ]);
+
+          const bitLen = bytes.length * 8;
+          const withPad = new Uint8Array(((bytes.length + 9 + 63) & ~63));
+          withPad.set(bytes);
+          withPad[bytes.length] = 0x80;
+          const view = new DataView(withPad.buffer);
+          view.setUint32(withPad.length - 4, bitLen >>> 0, false);
+          // high 32 bits of length stay 0 (verifier is short)
+
+          const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+          const W = new Uint32Array(64);
+
+          for (let i = 0; i < withPad.length; i += 64) {
+            for (let t = 0; t < 16; t++) W[t] = view.getUint32(i + t * 4, false);
+            for (let t = 16; t < 64; t++) {
+              const s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3);
+              const s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10);
+              W[t] = (W[t - 16] + s0 + W[t - 7] + s1) >>> 0;
+            }
+
+            let [a, b, c, d, e, f, g, h] = H;
+            for (let t = 0; t < 64; t++) {
+              const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+              const ch = (e & f) ^ (~e & g);
+              const temp1 = (h + S1 + ch + K[t] + W[t]) >>> 0;
+              const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+              const maj = (a & b) ^ (a & c) ^ (b & c);
+              const temp2 = (S0 + maj) >>> 0;
+              h = g; g = f; f = e; e = (d + temp1) >>> 0;
+              d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+            }
+            H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0;
+            H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+            H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0;
+            H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+          }
+
+          const out = new Uint8Array(32);
+          const outView = new DataView(out.buffer);
+          for (let i = 0; i < 8; i++) outView.setUint32(i * 4, H[i], false);
+          return out;
+        }
+
+        function parsePlaylistId(input) {
+          const raw = (input || "").trim();
+          if (!raw) return null;
+          let m = raw.match(/spotify:playlist:([a-zA-Z0-9]+)/);
+          if (m) return m[1];
+          m = raw.match(/open\.spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+          if (m) return m[1];
+          if (/^[a-zA-Z0-9]{22}$/.test(raw)) return raw;
+          return null;
+        }
+
+        function loadSettings() {
+          try {
+            return JSON.parse(localStorage.getItem(STORAGE.settings) || "{}");
+          } catch {
+            return {};
+          }
+        }
+
+        function saveSettings(partial) {
+          const next = { ...loadSettings(), ...partial };
+          localStorage.setItem(STORAGE.settings, JSON.stringify(next));
+          return next;
+        }
+
+        function loadColorMaps() {
+          try {
+            return JSON.parse(localStorage.getItem(STORAGE.colorMaps) || "{}");
+          } catch {
+            return {};
+          }
+        }
+
+        function getColorMap(playlistId) {
+          if (!playlistId) return {};
+          const maps = loadColorMaps();
+          return maps[playlistId] && typeof maps[playlistId] === "object"
+            ? { ...maps[playlistId] }
+            : {};
+        }
+
+        function setTrackColorMapping(playlistId, trackUri, colorId) {
+          if (!playlistId || !trackUri) return;
+          const all = loadColorMaps();
+          const map = { ...(all[playlistId] || {}) };
+          if (!colorId) delete map[trackUri];
+          else map[trackUri] = colorId;
+          all[playlistId] = map;
+          localStorage.setItem(STORAGE.colorMaps, JSON.stringify(all));
+          if (state.playlistId === playlistId) state.colorMap = map;
+          return map;
+        }
+
+        function applyColorMapForPlaylist(playlistId) {
+          state.colorMap = getColorMap(playlistId);
+          return state.colorMap;
+        }
+
+        function saveTokensToSession() {
+          if (!state.accessToken) {
+            sessionStorage.removeItem(STORAGE.tokens);
+            return;
+          }
+          sessionStorage.setItem(
+            STORAGE.tokens,
+            JSON.stringify({
+              accessToken: state.accessToken,
+              refreshToken: state.refreshToken,
+              tokenExpiresAt: state.tokenExpiresAt,
+            }),
+          );
+        }
+
+        function loadTokensFromSession() {
+          try {
+            const raw = sessionStorage.getItem(STORAGE.tokens);
+            if (!raw) return false;
+            const t = JSON.parse(raw);
+            state.accessToken = t.accessToken || null;
+            state.refreshToken = t.refreshToken || null;
+            state.tokenExpiresAt = t.tokenExpiresAt || 0;
+            return !!state.accessToken;
+          } catch {
+            return false;
+          }
+        }
+
+        function clearAuth() {
+          state.accessToken = null;
+          state.refreshToken = null;
+          state.tokenExpiresAt = 0;
+          sessionStorage.removeItem(STORAGE.tokens);
+          sessionStorage.removeItem(STORAGE.verifier);
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Modal
+        // ═══════════════════════════════════════════════════════════
+        function closeModal() {
+          $("modal-root").classList.remove("visible");
+          $("modal-actions").innerHTML = "";
+          $("modal-color-preview").hidden = true;
+          const dismiss = $("modal-dismiss");
+          dismiss.hidden = true;
+          dismiss.classList.remove("visible");
+          dismiss.onclick = null;
+          const trackEl = $("modal-track");
+          trackEl.hidden = true;
+          trackEl.classList.remove("visible", "on-light", "on-dark");
+          trackEl.style.background = "";
+        }
+
+        function relativeLuminance(hex) {
+          const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || "");
+          if (!m) return 0;
+          const toLin = (c) => {
+            const s = parseInt(c, 16) / 255;
+            return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+          };
+          return 0.2126 * toLin(m[1]) + 0.7152 * toLin(m[2]) + 0.0722 * toLin(m[3]);
+        }
+
+        function showModal({
+          title,
+          body = "",
+          colorHex = null,
+          track = null,
+          buttons,
+          dismissible = false,
+        }) {
+          return new Promise((resolve) => {
+            $("modal-title").textContent = title;
+
+            const trackEl = $("modal-track");
+            const preview = $("modal-color-preview");
+            const hasTrack = !!(track && (track.name || track.artist));
+
+            if (hasTrack) {
+              $("modal-track-name").textContent = track.name || "Okänd låt";
+              $("modal-track-artist").textContent = track.artist || "";
+              trackEl.hidden = false;
+              trackEl.classList.add("visible");
+              trackEl.classList.remove("on-light", "on-dark");
+
+              if (colorHex) {
+                trackEl.style.background = colorHex;
+                trackEl.classList.add(
+                  relativeLuminance(colorHex) > 0.55 ? "on-light" : "on-dark",
+                );
+              } else {
+                trackEl.style.background = "";
+              }
+
+              // Color lives behind the track — no separate swatch
+              preview.hidden = true;
+            } else {
+              trackEl.hidden = true;
+              trackEl.classList.remove("visible", "on-light", "on-dark");
+              trackEl.style.background = "";
+
+              if (colorHex) {
+                preview.style.background = colorHex;
+                preview.hidden = false;
+              } else {
+                preview.hidden = true;
+              }
+            }
+
+            $("modal-body").textContent = body || "";
+            $("modal-body").style.display = body ? "block" : "none";
+
+            const dismiss = $("modal-dismiss");
+            dismiss.hidden = !dismissible;
+            dismiss.classList.toggle("visible", !!dismissible);
+            dismiss.onclick = dismissible
+              ? () => {
+                  closeModal();
+                  resolve(null);
+                }
+              : null;
+
+            const actions = $("modal-actions");
+            actions.innerHTML = "";
+            actions.className =
+              "modal-actions" + (buttons.length === 1 ? " single" : "");
+
+            buttons.forEach((b) => {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "btn " + (b.className || "btn-secondary");
+              btn.textContent = b.label;
+              btn.addEventListener("click", () => {
+                closeModal();
+                resolve(b.value);
+              });
+              actions.appendChild(btn);
+            });
+
+            $("modal-root").classList.add("visible");
+          });
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Spotify Auth (PKCE)
+        // ═══════════════════════════════════════════════════════════
+        async function beginLogin() {
+          if (
+            !SPOTIFY_CLIENT_ID ||
+            SPOTIFY_CLIENT_ID === "YOUR_SPOTIFY_CLIENT_ID"
+          ) {
+            showSetupError(
+              "Sätt SPOTIFY_CLIENT_ID överst i index.html (Spotify Developer Dashboard).",
+            );
+            return;
+          }
+          const verifier = randomString(64);
+          sessionStorage.setItem(STORAGE.verifier, verifier);
+          const challenge = base64UrlEncode(await sha256(verifier));
+
+          const params = new URLSearchParams({
+            client_id: SPOTIFY_CLIENT_ID,
+            response_type: "code",
+            redirect_uri: REDIRECT_URI,
+            scope: SCOPES,
+            code_challenge_method: "S256",
+            code_challenge: challenge,
+            show_dialog: "true",
+          });
+
+          window.location.href =
+            "https://accounts.spotify.com/authorize?" + params.toString();
+        }
+
+        async function exchangeCode(code) {
+          const verifier = sessionStorage.getItem(STORAGE.verifier);
+          if (!verifier)
+            throw new Error("Saknar PKCE-verifier. Försök logga in igen.");
+
+          const body = new URLSearchParams({
+            client_id: SPOTIFY_CLIENT_ID,
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: REDIRECT_URI,
+            code_verifier: verifier,
+          });
+
+          const res = await fetch("https://accounts.spotify.com/api/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body,
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(
+              data.error_description ||
+                data.error ||
+                "Token-utbyte misslyckades",
+            );
+          }
+
+          applyTokenResponse(data);
+          sessionStorage.removeItem(STORAGE.verifier);
+        }
+
+        function applyTokenResponse(data) {
+          state.accessToken = data.access_token;
+          if (data.refresh_token) state.refreshToken = data.refresh_token;
+          state.tokenExpiresAt =
+            Date.now() + (data.expires_in || 3600) * 1000 - 60_000;
+          saveTokensToSession();
+        }
+
+        async function ensureToken() {
+          if (!state.accessToken) throw new AuthError("Inte inloggad");
+          if (Date.now() < state.tokenExpiresAt) return state.accessToken;
+
+          if (!state.refreshToken)
+            throw new AuthError("Sessionen har gått ut. Logga in igen.");
+
+          const body = new URLSearchParams({
+            client_id: SPOTIFY_CLIENT_ID,
+            grant_type: "refresh_token",
+            refresh_token: state.refreshToken,
+          });
+
+          const res = await fetch("https://accounts.spotify.com/api/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body,
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            clearAuth();
+            throw new AuthError(
+              data.error_description ||
+                "Kunde inte förnya token. Logga in igen.",
+            );
+          }
+
+          applyTokenResponse(data);
+          return state.accessToken;
+        }
+
+        function AuthError(message) {
+          this.name = "AuthError";
+          this.message = message;
+        }
+        AuthError.prototype = Object.create(Error.prototype);
+
+        function DeviceError(message) {
+          this.name = "DeviceError";
+          this.message = message;
+        }
+        DeviceError.prototype = Object.create(Error.prototype);
+
+        // ═══════════════════════════════════════════════════════════
+        // Spotify API
+        // ═══════════════════════════════════════════════════════════
+        async function spotifyFetch(path, options = {}) {
+          const token = await ensureToken();
+          const res = await fetch(API + path, {
+            ...options,
+            headers: {
+              Authorization: "Bearer " + token,
+              ...(options.body ? { "Content-Type": "application/json" } : {}),
+              ...(options.headers || {}),
+            },
+          });
+
+          if (res.status === 204) return null;
+
+          let data = null;
+          const text = await res.text();
+          if (text) {
+            try {
+              data = JSON.parse(text);
+            } catch {
+              data = { raw: text };
+            }
+          }
+
+          if (res.status === 401) {
+            // One retry after forced refresh
+            if (!options._retried && state.refreshToken) {
+              state.tokenExpiresAt = 0;
+              return spotifyFetch(path, { ...options, _retried: true });
+            }
+            clearAuth();
+            throw new AuthError("Sessionen har gått ut. Logga in igen.");
+          }
+
+          if (!res.ok) {
+            const msg =
+              (data &&
+                (data.error?.message ||
+                  data.error_description ||
+                  data.error)) ||
+              "Spotify-fel " + res.status;
+
+            if (
+              res.status === 404 ||
+              /NO_ACTIVE_DEVICE|no active device|Device not found/i.test(
+                String(msg),
+              )
+            ) {
+              throw new DeviceError(
+                "Ingen aktiv Spotify Connect-enhet. Öppna Spotify på högtalarenheten och välj den här.",
+              );
+            }
+            if (res.status === 403) {
+              throw new Error(
+                "Spotify nekade spellistan (403). API:t tillåter bara spellistor du äger eller är collaborator på. Högerklicka spellistan i Spotify → Lägg till i biblioteket / skapa en egen kopia, och klistra in den URL:en här.",
+              );
+            }
+            throw new Error(
+              typeof msg === "string" ? msg : JSON.stringify(msg),
+            );
+          }
+
+          return data;
+        }
+
+        async function fetchDevices() {
+          const data = await spotifyFetch("/me/player/devices");
+          return (data && data.devices) || [];
+        }
+
+        function toApiPath(urlOrPath) {
+          if (!urlOrPath) return null;
+          return urlOrPath.replace(/^https:\/\/api\.spotify\.com\/v1/, "");
+        }
+
+        async function fetchPlaylistTracks(playlistId) {
+          const tracks = [];
+          // Feb 2026+: /tracks borttaget → /items. Bara egna/collaborator-spellistor.
+          let path =
+            "/playlists/" +
+            encodeURIComponent(playlistId) +
+            "/items?limit=50&additional_types=track";
+
+          while (path) {
+            const data = await spotifyFetch(path);
+            const items = (data && data.items) || [];
+            for (const entry of items) {
+              const t = entry && (entry.item || entry.track);
+              if (t && t.type === "track" && t.uri) {
+                const artists = Array.isArray(t.artists)
+                  ? t.artists
+                      .map((a) => a && a.name)
+                      .filter(Boolean)
+                      .join(", ")
+                  : "";
+                tracks.push({
+                  uri: t.uri,
+                  name: t.name || "Okänd låt",
+                  artist: artists,
+                });
+              }
+            }
+            path = toApiPath(data && data.next);
+          }
+
+          return tracks;
+        }
+
+        async function fetchAllPlaylistTracks(playlistId) {
+          const tracks = await fetchPlaylistTracks(playlistId);
+          return tracks.map((t) => t.uri);
+        }
+
+        async function transferPlayback(deviceId, play) {
+          await spotifyFetch("/me/player", {
+            method: "PUT",
+            body: JSON.stringify({ device_ids: [deviceId], play: !!play }),
+          });
+        }
+
+        async function playUris(uris, deviceId) {
+          const qs = deviceId
+            ? "?device_id=" + encodeURIComponent(deviceId)
+            : "";
+          try {
+            await spotifyFetch("/me/player/play" + qs, {
+              method: "PUT",
+              body: JSON.stringify({ uris }),
+            });
+          } catch (err) {
+            if (err instanceof DeviceError && deviceId) {
+              await transferPlayback(deviceId, false);
+              await sleep(400);
+              await spotifyFetch(
+                "/me/player/play?device_id=" + encodeURIComponent(deviceId),
+                {
+                  method: "PUT",
+                  body: JSON.stringify({ uris }),
+                },
+              );
+              return;
+            }
+            throw err;
+          }
+        }
+
+        async function pausePlayback(deviceId) {
+          const qs = deviceId
+            ? "?device_id=" + encodeURIComponent(deviceId)
+            : "";
+          try {
+            await spotifyFetch("/me/player/pause" + qs, { method: "PUT" });
+          } catch (err) {
+            // Pausfel ska inte krascha rundan – låten kanske redan pausats
+            console.warn("Pause failed:", err);
+          }
+        }
+
+        async function resumePlayback(deviceId) {
+          const qs = deviceId
+            ? "?device_id=" + encodeURIComponent(deviceId)
+            : "";
+          try {
+            await spotifyFetch("/me/player/play" + qs, {
+              method: "PUT",
+              body: "{}",
+            });
+          } catch (err) {
+            if (state.currentTrackUri) {
+              await playUris([state.currentTrackUri], deviceId);
+              return;
+            }
+            throw err;
+          }
+        }
+
+        function formatTrackInfo(track) {
+          if (!track) return null;
+          const name = track.name || null;
+          const artists = Array.isArray(track.artists)
+            ? track.artists
+                .map((a) => a && a.name)
+                .filter(Boolean)
+                .join(", ")
+            : "";
+          if (!name && !artists) return null;
+          return { name: name || "Okänd låt", artist: artists };
+        }
+
+        /** Reveal title/artist only after pause — never while the round is playing. */
+        async function fetchRevealedTrackInfo() {
+          try {
+            const playback = await spotifyFetch("/me/player");
+            const playing = formatTrackInfo(
+              playback && (playback.item || playback.currently_playing_item),
+            );
+            if (playing) return playing;
+          } catch (err) {
+            console.warn("Could not read now playing:", err);
+          }
+
+          const uri = state.currentTrackUri;
+          const m = uri && uri.match(/^spotify:track:([a-zA-Z0-9]+)$/);
+          if (!m) return null;
+          try {
+            const track = await spotifyFetch("/tracks/" + encodeURIComponent(m[1]));
+            return formatTrackInfo(track);
+          } catch (err) {
+            console.warn("Could not fetch track:", err);
+            return null;
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // UI helpers
+        // ═══════════════════════════════════════════════════════════
+        function showBanner(el, message, actions) {
+          el.innerHTML = "";
+          const span = document.createElement("span");
+          span.textContent = message;
+          el.appendChild(span);
+
+          if (actions && actions.length) {
+            const wrap = document.createElement("div");
+            wrap.className = "row";
+            actions.forEach((a) => {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = "btn btn-secondary";
+              btn.style.minHeight = "40px";
+              btn.style.padding = "0.4rem 0.9rem";
+              btn.style.fontSize = "0.9rem";
+              btn.textContent = a.label;
+              btn.addEventListener("click", a.onClick);
+              wrap.appendChild(btn);
+            });
+            el.appendChild(wrap);
+          }
+
+          el.classList.add("visible");
+        }
+
+        function hideBanner(el) {
+          el.classList.remove("visible");
+          el.innerHTML = "";
+        }
+
+        function showSetupError(msg) {
+          showBanner($("setup-error"), msg, [
+            { label: "Logga in", onClick: () => beginLogin() },
+          ]);
+        }
+
+        function updateAuthUI() {
+          const loggedIn = !!state.accessToken;
+          $("auth-status").textContent = loggedIn
+            ? "Inloggad"
+            : "Inte inloggad";
+          $("auth-hint").textContent = loggedIn
+            ? "Token förnyas automatiskt under festen"
+            : "Kräver Spotify Premium";
+          $("btn-login").textContent = loggedIn
+            ? "Logga in igen"
+            : "Logga in med Spotify";
+        }
+
+        function renderDevices(devices, selectedId) {
+          const list = $("device-list");
+          list.innerHTML = "";
+
+          if (!devices.length) {
+            const p = document.createElement("p");
+            p.className = "hint";
+            p.textContent =
+              "Inga enheter hittades. Öppna Spotify-appen på telefonen/datorn som ska spela ljud, spela en låt kort, och tryck Uppdatera.";
+            list.appendChild(p);
+            return;
+          }
+
+          devices.forEach((d) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "device-item";
+            if (d.id === selectedId) btn.classList.add("selected");
+            if (d.is_active) btn.classList.add("active");
+
+            btn.innerHTML =
+              '<span class="dot"></span><span><div>' +
+              escapeHtml(d.name) +
+              '</div><div class="device-meta">' +
+              escapeHtml(d.type || "Enhet") +
+              (d.is_active ? " · aktiv" : "") +
+              (d.is_restricted ? " · begränsad" : "") +
+              "</div></span>";
+
+            btn.addEventListener("click", () => {
+              state.deviceId = d.id;
+              state.deviceName = d.name;
+              saveSettings({ deviceId: d.id, deviceName: d.name });
+              renderDevices(devices, d.id);
+            });
+
+            list.appendChild(btn);
+          });
+        }
+
+        function escapeHtml(s) {
+          return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function updateColorMapProgress(playlistId, tracks) {
+          const progress = $("color-map-progress");
+          if (!tracks || !tracks.length) {
+            progress.textContent =
+              "Valfritt – omappade låtar rättas manuellt under spelet.";
+            return;
+          }
+          const map = getColorMap(playlistId);
+          const mapped = tracks.filter((t) => map[t.uri]).length;
+          progress.textContent =
+            mapped +
+            " av " +
+            tracks.length +
+            " mappade · omappade rättas manuellt";
+        }
+
+        function renderColorMapList(playlistId, tracks) {
+          const list = $("color-map-list");
+          if (!tracks || !tracks.length) {
+            list.innerHTML =
+              '<p class="color-map-empty">Inga låtar hittades i spellistan.</p>';
+            updateColorMapProgress(playlistId, []);
+            return;
+          }
+
+          const map = getColorMap(playlistId);
+
+          list.innerHTML = tracks
+            .map((t) => {
+              const selected = map[t.uri] || "";
+              const options =
+                '<option value="">— Manuell —</option>' +
+                COLORS.map((c) => {
+                  const isSel = c.id === selected ? " selected" : "";
+                  return (
+                    '<option value="' +
+                    escapeHtml(c.id) +
+                    '"' +
+                    isSel +
+                    ">" +
+                    escapeHtml(c.label) +
+                    "</option>"
+                  );
+                }).join("");
+
+              return (
+                '<div class="color-map-row" data-uri="' +
+                escapeHtml(t.uri) +
+                '">' +
+                '<div class="color-map-meta">' +
+                '<div class="color-map-name">' +
+                escapeHtml(t.name) +
+                "</div>" +
+                '<div class="color-map-artist">' +
+                escapeHtml(t.artist || "") +
+                "</div>" +
+                "</div>" +
+                '<select aria-label="Färg för ' +
+                escapeHtml(t.name) +
+                '"' +
+                (selected ? ' class="mapped"' : "") +
+                ">" +
+                options +
+                "</select>" +
+                "</div>"
+              );
+            })
+            .join("");
+
+          list.querySelectorAll("select").forEach((sel) => {
+            sel.addEventListener("change", () => {
+              const row = sel.closest(".color-map-row");
+              const uri = row && row.getAttribute("data-uri");
+              const colorId = sel.value || null;
+              setTrackColorMapping(playlistId, uri, colorId);
+              sel.classList.toggle("mapped", !!colorId);
+              updateColorMapProgress(playlistId, tracks);
+            });
+          });
+
+          updateColorMapProgress(playlistId, tracks);
+        }
+
+        async function loadColorMapTracks(options = {}) {
+          const { silent = false } = options;
+          const list = $("color-map-list");
+          const btn = $("btn-load-color-map");
+
+          if (!state.accessToken) {
+            if (!silent) showSetupError("Logga in med Spotify först.");
+            return;
+          }
+
+          const input = $("playlist-input").value;
+          const playlistId = parsePlaylistId(input);
+          if (!playlistId) {
+            if (!silent) {
+              showSetupError(
+                "Klistra in en giltig Spotify-spellista innan du laddar låtar.",
+              );
+            }
+            list.innerHTML =
+              '<p class="color-map-empty">Ange spellista och ladda låtar för att mappa färger.</p>';
+            updateColorMapProgress(null, []);
+            return;
+          }
+
+          try {
+            btn.disabled = true;
+            btn.textContent = "Laddar…";
+            if (!silent) hideBanner($("setup-error"));
+            const tracks = await fetchPlaylistTracks(playlistId);
+            state.playlistTracks = tracks;
+            state.trackUris = tracks.map((t) => t.uri);
+            applyColorMapForPlaylist(playlistId);
+            renderColorMapList(playlistId, tracks);
+          } catch (err) {
+            if (!silent) await handleApiError(err, $("setup-error"));
+            else console.warn("Could not load color map tracks:", err);
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "Ladda låtar";
+          }
+        }
+
+        function buildColorGrid() {
+          const grid = $("color-grid");
+          grid.innerHTML = "";
+          COLORS.forEach((c) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "color-btn";
+            btn.dataset.id = c.id;
+            btn.style.background = c.hex;
+            btn.setAttribute("aria-label", c.label);
+            btn.disabled = true;
+            btn.addEventListener("click", () => onColorPressed(c.id));
+            grid.appendChild(btn);
+          });
+        }
+
+        function setColorsEnabled(enabled) {
+          $("color-grid")
+            .querySelectorAll(".color-btn")
+            .forEach((btn) => {
+              btn.disabled = !enabled;
+            });
+        }
+
+        function updateScoresUI() {
+          $("score-p1").textContent = String(state.scores[1]);
+          $("score-p2").textContent = String(state.scores[2]);
+        }
+
+        function flashScore(player, delta) {
+          const panel = $(player === 1 ? "panel-p1" : "panel-p2");
+          panel.classList.remove("flash-up", "flash-down");
+          void panel.offsetWidth;
+          panel.classList.add(delta > 0 ? "flash-up" : "flash-down");
+          setTimeout(
+            () => panel.classList.remove("flash-up", "flash-down"),
+            900,
+          );
+        }
+
+        function setStatus(text) {
+          $("status-label").textContent = text || "";
+        }
+
+        function setPlayingVisible(visible) {
+          $("playing-indicator").classList.toggle("visible", !!visible);
+        }
+
+        let skipUnlockTimer = null;
+        let skipCountdownTimer = null;
+
+        function clearSkipUnlock() {
+          if (skipUnlockTimer) {
+            clearTimeout(skipUnlockTimer);
+            skipUnlockTimer = null;
+          }
+          if (skipCountdownTimer) {
+            clearInterval(skipCountdownTimer);
+            skipCountdownTimer = null;
+          }
+          const btn = $("btn-skip-round");
+          btn.disabled = true;
+          btn.classList.remove("visible");
+          btn.textContent = "Ingen visste";
+        }
+
+        function startSkipUnlock() {
+          clearSkipUnlock();
+          const btn = $("btn-skip-round");
+          btn.classList.add("visible");
+          btn.disabled = true;
+
+          let left = SKIP_UNLOCK_SECONDS;
+          btn.textContent = "Ingen visste (" + left + ")";
+
+          skipCountdownTimer = setInterval(() => {
+            left -= 1;
+            if (left > 0) {
+              btn.textContent = "Ingen visste (" + left + ")";
+            }
+          }, 1000);
+
+          skipUnlockTimer = setTimeout(() => {
+            if (skipCountdownTimer) {
+              clearInterval(skipCountdownTimer);
+              skipCountdownTimer = null;
+            }
+            skipUnlockTimer = null;
+            btn.disabled = false;
+            btn.textContent = "Ingen visste";
+          }, SKIP_UNLOCK_SECONDS * 1000);
+        }
+
+        function setNextRoundVisible(visible) {
+          if (visible) clearSkipUnlock();
+          $("btn-next-round").classList.toggle("visible", !!visible);
+        }
+
+        function updateRoundLabel() {
+          $("round-label").textContent =
+            "Runda " +
+            Math.min(state.round, TOTAL_ROUNDS) +
+            " av " +
+            TOTAL_ROUNDS;
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Game flow
+        // ═══════════════════════════════════════════════════════════
+        function resetGameState() {
+          state.scores = { 1: 0, 2: 0 };
+          state.round = 0;
+          state.playedTrackUris = [];
+          state.currentTrackUri = null;
+          state.phase = "idle";
+          state.selectedColorId = null;
+          state.claimingPlayer = null;
+          state.roundBusy = false;
+        }
+
+        async function handleApiError(err, bannerEl) {
+          console.error(err);
+          if (err instanceof AuthError) {
+            showBanner(bannerEl, err.message, [
+              {
+                label: "Logga in",
+                onClick: () => {
+                  hideBanner(bannerEl);
+                  openSetup(true);
+                },
+              },
+            ]);
+            return;
+          }
+          if (err instanceof DeviceError) {
+            showBanner(bannerEl, err.message, [
+              {
+                label: "Välj enhet",
+                onClick: () => {
+                  hideBanner(bannerEl);
+                  openSetup(true);
+                },
+              },
+            ]);
+            return;
+          }
+          showBanner(bannerEl, err.message || "Något gick fel", [
+            {
+              label: "Öppna setup",
+              onClick: () => {
+                hideBanner(bannerEl);
+                openSetup(true);
+              },
+            },
+          ]);
+        }
+
+        async function startGame() {
+          hideBanner($("start-error"));
+          $("start-warning").hidden = true;
+
+          if (!state.accessToken) {
+            openSetup(false);
+            return;
+          }
+          if (!state.playlistId || !state.deviceId) {
+            openSetup(false);
+            return;
+          }
+
+          try {
+            $("btn-start").disabled = true;
+            setStatus("Laddar spellista…");
+            state.trackUris = await fetchAllPlaylistTracks(state.playlistId);
+            applyColorMapForPlaylist(state.playlistId);
+
+            if (state.trackUris.length < TOTAL_ROUNDS) {
+              $("start-warning").hidden = false;
+              $("start-warning").textContent =
+                "Spellistan har bara " +
+                state.trackUris.length +
+                " låtar. Spelet kräver " +
+                TOTAL_ROUNDS +
+                ". Lägg till fler eller byt spellista.";
+              $("btn-start").disabled = false;
+              return;
+            }
+
+            resetGameState();
+            updateScoresUI();
+            setNextRoundVisible(false);
+            setPlayingVisible(false);
+            setColorsEnabled(false);
+            hideBanner($("game-error"));
+            showScreen("game");
+            await beginRound();
+          } catch (err) {
+            await handleApiError(err, $("start-error"));
+          } finally {
+            $("btn-start").disabled = false;
+          }
+        }
+
+        async function beginRound() {
+          if (state.roundBusy) return;
+          state.roundBusy = true;
+          state.round += 1;
+          state.selectedColorId = null;
+          state.claimingPlayer = null;
+          state.currentTrackUri = null;
+          state.phase = "countdown";
+
+          updateRoundLabel();
+          setNextRoundVisible(false);
+          clearSkipUnlock();
+          setPlayingVisible(false);
+          setColorsEnabled(false);
+          setStatus("Nedräkning…");
+          hideBanner($("game-error"));
+
+          // Countdown 3-2-1
+          const overlay = $("countdown-overlay");
+          const numEl = $("countdown-num");
+          overlay.classList.add("visible");
+
+          for (const n of [3, 2, 1]) {
+            numEl.textContent = String(n);
+            numEl.style.animation = "none";
+            void numEl.offsetWidth;
+            numEl.style.animation = "";
+            await sleep(850);
+          }
+
+          overlay.classList.remove("visible");
+
+          // Pick unused track
+          const remaining = state.trackUris.filter(
+            (u) => !state.playedTrackUris.includes(u),
+          );
+          if (!remaining.length) {
+            state.roundBusy = false;
+            finishGame();
+            return;
+          }
+          const trackUri =
+            remaining[Math.floor(Math.random() * remaining.length)];
+          state.playedTrackUris.push(trackUri);
+          state.currentTrackUri = trackUri;
+
+          try {
+            await playUris([trackUri], state.deviceId);
+            state.phase = "playing";
+            setStatus("");
+            setPlayingVisible(true);
+            setColorsEnabled(true);
+            startSkipUnlock();
+            state.roundBusy = false;
+          } catch (err) {
+            state.phase = "idle";
+            state.roundBusy = false;
+            state.currentTrackUri = null;
+            // Undo round increment? Keep round number but allow retry via next / setup
+            setPlayingVisible(false);
+            setColorsEnabled(false);
+            setStatus("Kunde inte spela");
+            // Put track back so it can be retried
+            state.playedTrackUris = state.playedTrackUris.filter(
+              (u) => u !== trackUri,
+            );
+            state.round -= 1;
+            updateRoundLabel();
+            await handleApiError(err, $("game-error"));
+            setNextRoundVisible(true);
+            $("btn-next-round").textContent =
+              state.round === 0 ? "Försök igen" : "Försök igen";
+          }
+        }
+
+        async function onColorPressed(colorId) {
+          if (state.phase !== "playing" || state.roundBusy) return;
+          state.roundBusy = true;
+          state.phase = "judging";
+          state.selectedColorId = colorId;
+          clearSkipUnlock();
+          setColorsEnabled(false);
+          setPlayingVisible(false);
+          setStatus("Pausar…");
+
+          await pausePlayback(state.deviceId);
+          // Fetch track info now, but don't reveal until player is confirmed
+          // so × can undo without spoiling the song.
+          const trackInfo = await fetchRevealedTrackInfo();
+
+          const color = COLORS.find((c) => c.id === colorId);
+          const colorLabel = color ? color.label : "Okänd färg";
+
+          const player = await showModal({
+            title: colorLabel,
+            body: "Vem slog först?",
+            colorHex: color ? color.hex : null,
+            dismissible: true,
+            buttons: [
+              { label: "Spelare 1", value: 1, className: "btn-secondary" },
+              { label: "Spelare 2", value: 2, className: "btn-secondary" },
+            ],
+          });
+
+          if (player == null) {
+            await cancelColorPressAndResume();
+            return;
+          }
+
+          state.claimingPlayer = player;
+
+          const expectedColorId =
+            (state.currentTrackUri && state.colorMap[state.currentTrackUri]) ||
+            null;
+
+          let correct;
+          if (expectedColorId) {
+            correct = colorId === expectedColorId;
+          } else {
+            correct = await showModal({
+              title: colorLabel,
+              body: "Var det rätt färg?",
+              track: trackInfo,
+              colorHex: color ? color.hex : null,
+              buttons: [
+                { label: "Rätt ✓", value: true, className: "btn-primary" },
+                { label: "Fel ✗", value: false, className: "btn-danger" },
+              ],
+            });
+          }
+
+          // Reveal track after a committed answer (auto or manual)
+          if (expectedColorId) {
+            const expected = COLORS.find((c) => c.id === expectedColorId);
+            await showModal({
+              title: correct ? "Rätt!" : "Fel!",
+              body: correct
+                ? "+1 till Spelare " + player
+                : "−1 till Spelare " +
+                  player +
+                  (expected ? " · Rätt färg: " + expected.label : ""),
+              track: trackInfo,
+              colorHex: color ? color.hex : null,
+              buttons: [
+                { label: "OK", value: true, className: "btn-primary" },
+              ],
+            });
+          }
+
+          const delta = correct ? 1 : -1;
+          state.scores[player] += delta;
+          updateScoresUI();
+          flashScore(player, delta);
+
+          let statusText =
+            (correct ? "Rätt! " : "Fel! ") +
+            (delta > 0 ? "+1" : "−1") +
+            " till Spelare " +
+            player;
+
+          if (expectedColorId && !correct) {
+            const expected = COLORS.find((c) => c.id === expectedColorId);
+            if (expected) statusText += " · Rätt färg: " + expected.label;
+          }
+
+          setStatus(statusText);
+
+          state.phase = "between";
+          state.roundBusy = false;
+
+          if (state.round >= TOTAL_ROUNDS) {
+            await sleep(900);
+            finishGame();
+          } else {
+            $("btn-next-round").textContent = "Nästa runda";
+            setNextRoundVisible(true);
+          }
+        }
+
+        async function cancelColorPressAndResume() {
+          state.selectedColorId = null;
+          state.claimingPlayer = null;
+          state.phase = "playing";
+          setStatus("");
+          setPlayingVisible(true);
+          setColorsEnabled(true);
+          startSkipUnlock();
+          state.roundBusy = false;
+          try {
+            await resumePlayback(state.deviceId);
+          } catch (err) {
+            await handleApiError(err, $("game-error"));
+          }
+        }
+
+        async function skipRound() {
+          if (state.phase !== "playing" || state.roundBusy) return;
+          const skipBtn = $("btn-skip-round");
+          if (skipBtn.disabled || !skipBtn.classList.contains("visible")) {
+            return;
+          }
+
+          state.roundBusy = true;
+          state.phase = "judging";
+          clearSkipUnlock();
+          setColorsEnabled(false);
+          setPlayingVisible(false);
+          setStatus("Hoppar över…");
+
+          await pausePlayback(state.deviceId);
+          const trackInfo = await fetchRevealedTrackInfo();
+
+          await showModal({
+            title: "Ingen visste",
+            body: "Ingen poäng denna runda.",
+            track: trackInfo,
+            buttons: [
+              { label: "OK", value: true, className: "btn-primary" },
+            ],
+          });
+
+          setStatus("Hoppad över");
+          state.phase = "between";
+          state.roundBusy = false;
+
+          if (state.round >= TOTAL_ROUNDS) {
+            await sleep(600);
+            finishGame();
+          } else {
+            $("btn-next-round").textContent = "Nästa runda";
+            setNextRoundVisible(true);
+          }
+        }
+
+        function finishGame() {
+          state.phase = "finished";
+          clearSkipUnlock();
+          setColorsEnabled(false);
+          setPlayingVisible(false);
+          setNextRoundVisible(false);
+          pausePlayback(state.deviceId);
+
+          $("final-p1").textContent = String(state.scores[1]);
+          $("final-p2").textContent = String(state.scores[2]);
+
+          if (state.scores[1] > state.scores[2]) {
+            $("winner-title").textContent = "Spelare 1 vinner!";
+          } else if (state.scores[2] > state.scores[1]) {
+            $("winner-title").textContent = "Spelare 2 vinner!";
+          } else {
+            $("winner-title").textContent = "Oavgjort!";
+          }
+
+          showScreen("results");
+        }
+
+        async function endGameConfirm() {
+          const ok = await showModal({
+            title: "Avsluta spelomgång?",
+            body: "Poängen nollställs. Musiken pausas.",
+            buttons: [
+              {
+                label: "Fortsätt spela",
+                value: false,
+                className: "btn-secondary",
+              },
+              { label: "Avsluta", value: true, className: "btn-danger" },
+            ],
+          });
+          if (!ok) return;
+          await pausePlayback(state.deviceId);
+          state.phase = "idle";
+          clearSkipUnlock();
+          setColorsEnabled(false);
+          setPlayingVisible(false);
+          setNextRoundVisible(false);
+          showScreen("start");
           refreshStartWarnings();
-        })
-        .catch(() => {});
-    } else {
-      openSetup(false);
-    }
-  }
+        }
 
-  boot();
-})();
-  </script>
-</body>
+        // ═══════════════════════════════════════════════════════════
+        // Setup / navigation
+        // ═══════════════════════════════════════════════════════════
+        let setupReturnScreen = "start";
+
+        function openSetup(fromGame) {
+          setupReturnScreen = fromGame ? "game" : "start";
+          const canCancel =
+            fromGame ||
+            !!(state.accessToken && state.playlistId && state.deviceId);
+          $("btn-setup-cancel").hidden = !canCancel;
+
+          const settings = loadSettings();
+          if (settings.playlistInput)
+            $("playlist-input").value = settings.playlistInput;
+          hideBanner($("setup-error"));
+          updateAuthUI();
+          showScreen("setup");
+
+          if (state.accessToken) {
+            refreshDeviceList().catch((err) =>
+              handleApiError(err, $("setup-error")),
+            );
+            loadColorMapTracks({ silent: true });
+          }
+        }
+
+        async function refreshDeviceList() {
+          const devices = await fetchDevices();
+          const selected = state.deviceId || loadSettings().deviceId || null;
+          if (selected && devices.some((d) => d.id === selected)) {
+            state.deviceId = selected;
+          }
+          renderDevices(devices, state.deviceId);
+        }
+
+        async function saveSetup() {
+          hideBanner($("setup-error"));
+
+          if (!state.accessToken) {
+            showSetupError("Logga in med Spotify först.");
+            return;
+          }
+
+          const input = $("playlist-input").value;
+          const playlistId = parsePlaylistId(input);
+          if (!playlistId) {
+            showSetupError(
+              "Klistra in en giltig Spotify-spellista (URL eller URI).",
+            );
+            return;
+          }
+
+          if (!state.deviceId) {
+            showSetupError(
+              "Välj vilken Spotify Connect-enhet som ska spela ljudet.",
+            );
+            return;
+          }
+
+          try {
+            $("btn-setup-save").disabled = true;
+            // Validate playlist is reachable
+            const tracks = await fetchPlaylistTracks(playlistId);
+            state.playlistId = playlistId;
+            state.playlistUri = "spotify:playlist:" + playlistId;
+            state.playlistTracks = tracks;
+            state.trackUris = tracks.map((t) => t.uri);
+            applyColorMapForPlaylist(playlistId);
+            renderColorMapList(playlistId, tracks);
+
+            saveSettings({
+              playlistInput: input.trim(),
+              playlistId,
+              deviceId: state.deviceId,
+              deviceName: state.deviceName,
+            });
+
+            // Soft-transfer so device is ready
+            try {
+              await transferPlayback(state.deviceId, false);
+            } catch (e) {
+              console.warn("Transfer warning:", e);
+            }
+
+            refreshStartWarnings();
+            showScreen("start");
+          } catch (err) {
+            await handleApiError(err, $("setup-error"));
+          } finally {
+            $("btn-setup-save").disabled = false;
+          }
+        }
+
+        function refreshStartWarnings() {
+          const warn = $("start-warning");
+          if (state.trackUris.length && state.trackUris.length < TOTAL_ROUNDS) {
+            warn.hidden = false;
+            warn.textContent =
+              "Spellistan har bara " +
+              state.trackUris.length +
+              " låtar (behöver minst " +
+              TOTAL_ROUNDS +
+              ").";
+          } else {
+            warn.hidden = true;
+          }
+        }
+
+        function applySavedSettings() {
+          const s = loadSettings();
+          if (s.playlistId) {
+            state.playlistId = s.playlistId;
+            state.playlistUri = "spotify:playlist:" + s.playlistId;
+            applyColorMapForPlaylist(s.playlistId);
+          }
+          if (s.playlistInput) $("playlist-input").value = s.playlistInput;
+          if (s.deviceId) {
+            state.deviceId = s.deviceId;
+            state.deviceName = s.deviceName || null;
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // Boot
+        // ═══════════════════════════════════════════════════════════
+        async function handleRedirectIfNeeded() {
+          const params = new URLSearchParams(window.location.search);
+          const code = params.get("code");
+          const error = params.get("error");
+
+          if (error) {
+            window.history.replaceState(
+              {},
+              document.title,
+              window.location.pathname,
+            );
+            showSetupError("Inloggning avbröts: " + error);
+            return "error";
+          }
+
+          if (code) {
+            window.history.replaceState(
+              {},
+              document.title,
+              window.location.pathname,
+            );
+            try {
+              await exchangeCode(code);
+              return "ok";
+            } catch (err) {
+              showSetupError(err.message || "Inloggning misslyckades");
+              return "error";
+            }
+          }
+          return "none";
+        }
+
+        function wireEvents() {
+          $("btn-login").addEventListener("click", () => beginLogin());
+          $("btn-refresh-devices").addEventListener("click", async () => {
+            try {
+              hideBanner($("setup-error"));
+              await refreshDeviceList();
+            } catch (err) {
+              await handleApiError(err, $("setup-error"));
+            }
+          });
+          $("btn-setup-save").addEventListener("click", () => saveSetup());
+          $("btn-load-color-map").addEventListener("click", () =>
+            loadColorMapTracks(),
+          );
+          $("btn-setup-cancel").addEventListener("click", () => {
+            showScreen(setupReturnScreen);
+          });
+          $("btn-open-setup").addEventListener("click", () => openSetup(false));
+          $("btn-start").addEventListener("click", () => startGame());
+          $("btn-next-round").addEventListener("click", () => beginRound());
+          $("btn-skip-round").addEventListener("click", () => skipRound());
+          $("btn-end-game").addEventListener("click", () => endGameConfirm());
+          $("btn-back-start").addEventListener("click", () => {
+            showScreen("start");
+            refreshStartWarnings();
+          });
+
+          // Prevent accidental pinch-zoom gestures disrupting play on older iOS
+          document.addEventListener("gesturestart", (e) => e.preventDefault(), {
+            passive: false,
+          });
+        }
+
+        async function boot() {
+          buildColorGrid();
+          wireEvents();
+          applySavedSettings();
+          loadTokensFromSession();
+
+          const redirect = await handleRedirectIfNeeded();
+          updateAuthUI();
+
+          const ready = state.accessToken && state.playlistId && state.deviceId;
+
+          if (redirect === "ok") {
+            openSetup(false);
+            try {
+              await refreshDeviceList();
+            } catch (err) {
+              await handleApiError(err, $("setup-error"));
+            }
+            return;
+          }
+
+          if (ready) {
+            showScreen("start");
+            // Prefetch tracks in background for warning
+            fetchAllPlaylistTracks(state.playlistId)
+              .then((uris) => {
+                state.trackUris = uris;
+                refreshStartWarnings();
+              })
+              .catch(() => {});
+          } else {
+            openSetup(false);
+          }
+        }
+
+        boot();
+      })();
+    </script>
+  </body>
 </html>
