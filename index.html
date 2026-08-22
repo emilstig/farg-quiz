@@ -1228,17 +1228,25 @@
         const SKIP_UNLOCK_SECONDS = 15;
 
         /** Färgknappar – id, label, CSS-färg. Ändra fritt. */
+        const RAINBOW_COLOR_ID = "rainbow";
+
         const COLORS = [
           { id: "red", label: "Röd", hex: "#e11d48" },
           { id: "blue", label: "Blå", hex: "#2563eb" },
           { id: "green", label: "Grön", hex: "#16a34a" },
           { id: "yellow", label: "Gul", hex: "#eab308" },
-          { id: "orange", label: "Orange", hex: "#ea580c" },
+          { id: "gold", label: "Guld", hex: "#d4af37" },
           { id: "purple", label: "Lila", hex: "#7c3aed" },
           { id: "pink", label: "Rosa", hex: "#ec4899" },
           { id: "black", label: "Svart", hex: "#171717" },
           { id: "white", label: "Vit", hex: "#f4f4f5" },
           { id: "brown", label: "Brun", hex: "#92400e" },
+        ];
+
+        /** Endast i låtmappning – inte en spelknapp. */
+        const COLOR_MAP_OPTIONS = [
+          ...COLORS,
+          { id: RAINBOW_COLOR_ID, label: "Regnbåge" },
         ];
 
         const SCOPES = [
@@ -1462,12 +1470,34 @@
           }
         }
 
+        function normalizeColorId(colorId) {
+          if (colorId === "orange") return "gold";
+          return colorId;
+        }
+
         function getColorMap(playlistId) {
           if (!playlistId) return {};
           const maps = loadColorMaps();
-          return maps[playlistId] && typeof maps[playlistId] === "object"
-            ? { ...maps[playlistId] }
-            : {};
+          const raw =
+            maps[playlistId] && typeof maps[playlistId] === "object"
+              ? maps[playlistId]
+              : {};
+          const map = {};
+          for (const [uri, colorId] of Object.entries(raw)) {
+            map[uri] = normalizeColorId(colorId);
+          }
+          return map;
+        }
+
+        function getMappedColorLabel(colorId) {
+          const opt = COLOR_MAP_OPTIONS.find((c) => c.id === colorId);
+          return opt ? opt.label : "Okänd färg";
+        }
+
+        function isCorrectColor(colorId, expectedColorId) {
+          if (!expectedColorId) return null;
+          if (expectedColorId === RAINBOW_COLOR_ID) return true;
+          return colorId === expectedColorId;
         }
 
         function setTrackColorMapping(playlistId, trackUri, colorId) {
@@ -2570,7 +2600,7 @@
               const selected = map[t.uri] || "";
               const options =
                 '<option value="">— Manuell —</option>' +
-                COLORS.map((c) => {
+                COLOR_MAP_OPTIONS.map((c) => {
                   const isSel = c.id === selected ? " selected" : "";
                   return (
                     '<option value="' +
@@ -2984,7 +3014,7 @@
 
           let correct;
           if (expectedColorId) {
-            correct = colorId === expectedColorId;
+            correct = isCorrectColor(colorId, expectedColorId);
           } else {
             correct = await showModal({
               title: colorLabel,
@@ -3000,14 +3030,15 @@
 
           // Reveal track after a committed answer (auto or manual)
           if (expectedColorId) {
-            const expected = COLORS.find((c) => c.id === expectedColorId);
+            const expectedLabel = getMappedColorLabel(expectedColorId);
             await showModal({
               title: correct ? "Rätt!" : "Fel!",
               body: correct
                 ? "+1 till Spelare " + player
                 : "−1 till Spelare " +
                   player +
-                  (expected ? " · Rätt färg: " + expected.label : ""),
+                  " · Rätt färg: " +
+                  expectedLabel,
               track: trackInfo,
               colorHex: color ? color.hex : null,
               buttons: [
@@ -3028,8 +3059,7 @@
             player;
 
           if (expectedColorId && !correct) {
-            const expected = COLORS.find((c) => c.id === expectedColorId);
-            if (expected) statusText += " · Rätt färg: " + expected.label;
+            statusText += " · Rätt färg: " + getMappedColorLabel(expectedColorId);
           }
 
           setStatus(statusText);
